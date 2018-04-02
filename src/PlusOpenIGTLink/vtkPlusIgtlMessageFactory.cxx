@@ -137,9 +137,8 @@ PlusStatus vtkPlusIgtlMessageFactory::PackMessages(const PlusIgtlClientInfo& cli
     transformRepository->SetTransforms(trackedFrame);
   }
 
-  for (std::vector<std::string>::const_iterator messageTypeIterator = clientInfo.IgtlMessageTypes.begin(); messageTypeIterator != clientInfo.IgtlMessageTypes.end(); ++ messageTypeIterator)
+  for (auto& messageType : clientInfo.IgtlMessageTypes)
   {
-    std::string messageType = (*messageTypeIterator);
     igtl::MessageBase::Pointer igtlMessage;
     try
     {
@@ -161,10 +160,8 @@ PlusStatus vtkPlusIgtlMessageFactory::PackMessages(const PlusIgtlClientInfo& cli
     // Image message
     if (typeid(*igtlMessage) == typeid(igtl::ImageMessage))
     {
-      for (std::vector<PlusIgtlClientInfo::ImageStream>::const_iterator imageStreamIterator = clientInfo.ImageStreams.begin(); imageStreamIterator != clientInfo.ImageStreams.end(); ++imageStreamIterator)
+      for (auto& imageStream : clientInfo.ImageStreams)
       {
-        PlusIgtlClientInfo::ImageStream imageStream = (*imageStreamIterator);
-
         //Set transform name to [Name]To[CoordinateFrame]
         PlusTransformName imageTransformName = PlusTransformName(imageStream.Name, imageStream.EmbeddedTransformToFrame);
 
@@ -198,9 +195,8 @@ PlusStatus vtkPlusIgtlMessageFactory::PackMessages(const PlusIgtlClientInfo& cli
     // Transform message
     else if (typeid(*igtlMessage) == typeid(igtl::TransformMessage))
     {
-      for (std::vector<PlusTransformName>::const_iterator transformNameIterator = clientInfo.TransformNames.begin(); transformNameIterator != clientInfo.TransformNames.end(); ++transformNameIterator)
+      for (auto& transformName : clientInfo.TransformNames)
       {
-        PlusTransformName transformName = (*transformNameIterator);
         bool isValid = false;
         transformRepository->GetTransformValid(transformName, isValid);
 
@@ -224,10 +220,8 @@ PlusStatus vtkPlusIgtlMessageFactory::PackMessages(const PlusIgtlClientInfo& cli
       if (clientInfo.GetTDATARequested() && clientInfo.GetLastTDATASentTimeStamp() + clientInfo.GetTDATAResolution() < trackedFrame.GetTimestamp())
       {
         std::map<std::string, vtkSmartPointer<vtkMatrix4x4> > transforms;
-        for (std::vector<PlusTransformName>::const_iterator transformNameIterator = clientInfo.TransformNames.begin(); transformNameIterator != clientInfo.TransformNames.end(); ++transformNameIterator)
+        for (auto& transformName : clientInfo.TransformNames)
         {
-          PlusTransformName transformName = (*transformNameIterator);
-
           bool isValid = false;
           vtkSmartPointer<vtkMatrix4x4> mat = vtkSmartPointer<vtkMatrix4x4>::New();
           transformRepository->GetTransform(transformName, mat, &isValid);
@@ -252,7 +246,7 @@ PlusStatus vtkPlusIgtlMessageFactory::PackMessages(const PlusIgtlClientInfo& cli
     // Position message
     else if (typeid(*igtlMessage) == typeid(igtl::PositionMessage))
     {
-      for (std::vector<PlusTransformName>::const_iterator transformNameIterator = clientInfo.TransformNames.begin(); transformNameIterator != clientInfo.TransformNames.end(); ++transformNameIterator)
+      for (auto& transformName : clientInfo.TransformNames)
       {
         /*
           Advantage of using position message type:
@@ -260,7 +254,6 @@ PlusStatus vtkPlusIgtlMessageFactory::PackMessages(const PlusIgtlClientInfo& cli
           the POSITION data type has the advantage of smaller data size (19%). It is therefore more suitable for
           pushing high frame-rate data from tracking devices.
         */
-        PlusTransformName transformName = (*transformNameIterator);
         igtl::Matrix4x4 igtlMatrix;
         vtkPlusIgtlMessageCommon::GetIgtlMatrix(igtlMatrix, transformRepository, transformName);
 
@@ -278,13 +271,13 @@ PlusStatus vtkPlusIgtlMessageFactory::PackMessages(const PlusIgtlClientInfo& cli
     {
       igtl::PlusTrackedFrameMessage::Pointer trackedFrameMessage = dynamic_cast<igtl::PlusTrackedFrameMessage*>(igtlMessage->Clone().GetPointer());
 
-      for (auto nameIter = clientInfo.TransformNames.begin(); nameIter != clientInfo.TransformNames.end(); ++nameIter)
+      for (auto& nameIter : clientInfo.TransformNames)
       {
         bool isValid(false);
         vtkSmartPointer<vtkMatrix4x4> matrix(vtkSmartPointer<vtkMatrix4x4>::New());
-        transformRepository->GetTransform(*nameIter, matrix, &isValid);
-        trackedFrame.SetCustomFrameTransform(*nameIter, matrix);
-        trackedFrame.SetCustomFrameTransformStatus(*nameIter, isValid ? FIELD_OK : FIELD_INVALID);
+        transformRepository->GetTransform(nameIter, matrix, &isValid);
+        trackedFrame.SetCustomFrameTransform(nameIter, matrix);
+        trackedFrame.SetCustomFrameTransformStatus(nameIter, isValid ? FIELD_OK : FIELD_INVALID);
       }
 
       vtkSmartPointer<vtkMatrix4x4> imageMatrix = vtkSmartPointer<vtkMatrix4x4>::New();
@@ -321,17 +314,16 @@ PlusStatus vtkPlusIgtlMessageFactory::PackMessages(const PlusIgtlClientInfo& cli
     // String message
     else if (typeid(*igtlMessage) == typeid(igtl::StringMessage))
     {
-      for (std::vector< std::string >::const_iterator stringNameIterator = clientInfo.StringNames.begin(); stringNameIterator != clientInfo.StringNames.end(); ++stringNameIterator)
+      for (auto& stringName : clientInfo.StringNames)
       {
-        const char* stringName = stringNameIterator->c_str();
-        const char* stringValue = trackedFrame.GetCustomFrameField(stringName);
+        const char* stringValue = trackedFrame.GetCustomFrameField(stringName.c_str());
         if (stringValue == NULL)
         {
           // no value is available, do not send anything
           continue;
         }
         igtl::StringMessage::Pointer stringMessage = dynamic_cast<igtl::StringMessage*>(igtlMessage->Clone().GetPointer());
-        vtkPlusIgtlMessageCommon::PackStringMessage(stringMessage, stringName, stringValue, trackedFrame.GetTimestamp());
+        vtkPlusIgtlMessageCommon::PackStringMessage(stringMessage, stringName.c_str(), stringValue, trackedFrame.GetTimestamp());
         igtlMessages.push_back(stringMessage.GetPointer());
       }
     }
