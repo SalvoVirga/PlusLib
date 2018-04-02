@@ -19,6 +19,7 @@ happens between two threads. In real life, it happens between two programs.
 #include "vtkPlusChannel.h"
 #include "vtkPlusDataSource.h"
 #include "vtkPlusOpenIGTLinkServer.h"
+#include "vtkPlusSimplePublisher.h"
 #include "vtkSmartPointer.h"
 #include "vtkPlusTransformRepository.h"
 #include "vtksys/CommandLineArguments.hxx"
@@ -40,8 +41,8 @@ int main(int argc, char** argv)
 {
   // Check command line arguments.
   bool printHelp(false);
-  std::string inputConfigFileName;
-  std::string testingConfigFileName;
+  std::string inputConfigFileName{""};
+  std::string testingConfigFileName{""};
   int verboseLevel = vtkPlusLogger::LOG_LEVEL_UNDEFINED;
   double runTimeSec = 0.0;
 
@@ -136,9 +137,10 @@ int main(int argc, char** argv)
     return PLUS_FAIL;
   }
 
-  LOG_INFO("Server status: Starting servers.");
-  std::vector<vtkPlusOpenIGTLinkServer*> serverList;
-  int serverCount(0);
+  // OpenIGTLink Servers
+  LOG_INFO("Server status: Starting OpenIGTLink servers.");
+  std::vector<vtkPlusOpenIGTLinkServer*> igtlServerList;
+  int igltServerCount(0);
   for (int i = 0; i < configRootElement->GetNumberOfNestedElements(); ++i)
   {
     vtkXMLDataElement* serverElement = configRootElement->GetNestedElement(i);
@@ -147,7 +149,7 @@ int main(int argc, char** argv)
       continue;
     }
 
-    serverCount++;
+    igltServerCount++;
 
     // This is a PlusServer tag, let's create it
     vtkSmartPointer<vtkPlusOpenIGTLinkServer> server = vtkSmartPointer<vtkPlusOpenIGTLinkServer>::New();
@@ -157,11 +159,41 @@ int main(int argc, char** argv)
       LOG_ERROR("Failed to start OpenIGTLink server");
       exit(EXIT_FAILURE);
     }
-    serverList.push_back(server);
+    igtlServerList.push_back(server);
   }
-  if (serverCount == 0)
+  if (igltServerCount == 0)
   {
     LOG_ERROR("No vtkPlusOpenIGTLinkServer tags were found in the configuration file. Please add at least one.");
+    exit(EXIT_FAILURE);
+  }
+
+  // SIMPLE Publishers
+  LOG_INFO("Server status: Starting SIMPLE publishers.");
+  std::vector<vtkPlusSimplePublisher*> simplePublisherList;
+  int simpleServerCount(0);
+  for (int i = 0; i < configRootElement->GetNumberOfNestedElements(); ++i)
+  {
+    vtkXMLDataElement* serverElement = configRootElement->GetNestedElement(i);
+    if (STRCASECMP(serverElement->GetName(), "PlusSimplePublisher") != 0)
+    {
+      continue;
+    }
+
+    simpleServerCount++;
+
+    // This is a PlusPublisher tag, let's create it
+    vtkSmartPointer<vtkPlusSimplePublisher> publisher = vtkSmartPointer<vtkPlusSimplePublisher>::New();
+    LOG_DEBUG("Initializing Plus SIMPLE publisher... ");
+    if (server->Start(dataCollector, transformRepository, serverElement, configFilePath) != PLUS_SUCCESS)
+    {
+      LOG_ERROR("Failed to start SIMPLE publisher");
+      exit(EXIT_FAILURE);
+    }
+    simplePublisherList.push_back(publisher);
+  }
+  if (simpleServerCount == 0)
+  {
+    LOG_ERROR("No vtkPlusSimplePublisher tags were found in the configuration file.");
     exit(EXIT_FAILURE);
   }
 
@@ -182,9 +214,13 @@ int main(int argc, char** argv)
   const double commandQueuePollIntervalSec = 0.010;
   while ((neverStop || (vtkPlusAccurateTimer::GetSystemTime() < startTime + runTimeSec)) && !stopRequested)
   {
-    for (std::vector<vtkPlusOpenIGTLinkServer*>::iterator it = serverList.begin(); it != serverList.end(); ++it)
+    for (auto server : igtlServerList)
     {
-      (*it)->ProcessPendingCommands();
+      server->ProcessPendingCommands();
+    }
+    for (auto publisher : simplePublisherList)
+    {
+        publisher->ProcessPendingCommands();
     }
 #if _WIN32
     // Check if received message that requested process termination (non-Windows systems always use signals).
@@ -195,11 +231,14 @@ int main(int argc, char** argv)
     vtkPlusAccurateTimer::DelayWithEventProcessing(commandQueuePollIntervalSec);
   }
 
-  for (std::vector<vtkPlusOpenIGTLinkServer*>::iterator it = serverList.begin(); it != serverList.end(); ++it)
+  for (auto server : igtlServerList)
   {
-    (*it)->Stop();
+    server->Stop();
   }
-
+  for (auto publisher : simplePublisherList)
+  {
+      publisher->Stop();
+  }
   LOG_INFO("Shutdown successful.");
 
   return EXIT_SUCCESS;
