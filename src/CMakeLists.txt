@@ -38,6 +38,11 @@ IF(PLUS_USE_OpenIGTLink)
   FIND_PACKAGE(OpenIGTLinkIO REQUIRED NO_MODULE)
 ENDIF()
 
+OPTION(PLUS_USE_SIMPLE "Use the SIMPLE library" OFF)
+IF(PLUS_USE_SIMPLE)
+  FIND_PACKAGE(simple REQUIRED)
+ENDIF()
+
 # --------------------------------------------------------------------------
 # Options
 OPTION(BUILD_SHARED_LIBS "Build with shared libraries." ${VTK_BUILD_SHARED_LIBS} ${ITK_BUILD_SHARED_LIBS})
