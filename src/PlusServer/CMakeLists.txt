@@ -3,6 +3,7 @@ PROJECT(PlusServer)
 # --------------------------------------------------------------------------
 # Sources
 SET(${PROJECT_NAME}_SRCS
+  vtkPlusSimplePublisher.cxx
   vtkPlusOpenIGTLinkServer.cxx
   vtkPlusOpenIGTLinkClient.cxx
   vtkPlusCommandResponse.cxx
@@ -23,6 +24,7 @@ SET(${PROJECT_NAME}_SRCS
 
 IF(MSVC OR ${CMAKE_GENERATOR} MATCHES "Xcode")
   SET(${PROJECT_NAME}_HDRS
+    vtkPlusSimplePublisher.h
     vtkPlusOpenIGTLinkServer.h
     vtkPlusOpenIGTLinkClient.h
     vtkPlusCommandResponse.h
@@ -72,6 +74,7 @@ SET(${PROJECT_NAME}_LIBS
   )
 SET(${PROJECT_NAME}_PRIVATE_LIBS
   igtlioConverter
+  simple::simple-static
   )
 
 # If igtlioConverter was compiled as a static library, we do not need igtlio in the install configuration
