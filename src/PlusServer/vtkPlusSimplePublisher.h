@@ -13,6 +13,7 @@
 
 // SIMPLE includes
 #include <simple/publisher.hpp>
+#include <simple_msgs/image.hpp>
 
 class vtkPlusServerExport vtkPlusSimplePublisher : public vtkObject {
 
@@ -36,13 +37,13 @@ public:
   PlusStatus Start(vtkPlusDataCollector* dataCollector, vtkPlusTransformRepository* transformRepository, vtkXMLDataElement* serverElement, const std::string& configFilePath);
 
   /*! Stop the SIMPLE Publisher */
-  PlusStatus Stop();
+  //PlusStatus Stop();
 
   /*! Read the configuration file in XML format and set up the devices */
   virtual PlusStatus ReadConfiguration(vtkXMLDataElement* serverElement, const std::string& aFilename);
 
   /*! Start publisher*/
-  PlusStatus vtkPlusSimplePublisher::StartSimpleService();
+  PlusStatus StartSimpleService();
 
   /*! Set server listening port */
   vtkSetMacro(ListeningPort, int);
@@ -62,6 +63,7 @@ public:
   /*! Get the required OutputChannelId */
   vtkGetStdStringMacro(OutputChannelId);
 
+  vtkSetStdStringMacro(ConfigFilename);
   vtkGetStdStringMacro(ConfigFilename);
 
   /*!
@@ -77,7 +79,7 @@ protected:
 private:
 
   /*! Simple publisher instance */
-  simple::Publisher Publisher{};
+  simple::Publisher<simple_msgs::Image<uint8_t>> Publisher;
 
   /*! Transform repository instance */
   vtkSmartPointer<vtkPlusTransformRepository> TransformRepository{nullptr};
@@ -87,6 +89,15 @@ private:
 
   /*! Multithreader instance for controlling threads */
   vtkSmartPointer<vtkMultiThreader> Threader{nullptr};
+
+  /*! Thread for sending data to clients */
+  static void* DataSenderThread(vtkMultiThreader::ThreadInfo* data);
+
+  /*! Attempt to send any unsent frames to clients, if unsuccessful, accumulate an elapsed time */
+  static PlusStatus SendLatestFrames(vtkPlusSimplePublisher& self, double& elapsedTimeSinceLastPacketSentSec);
+
+  /*! Tracked frame interface, sends the selected message type and data to all clients */
+  virtual PlusStatus SendTrackedFrame(PlusTrackedFrame& trackedFrame);
 
   /*! Server listening port */
   int ListeningPort{1};
@@ -104,7 +115,7 @@ private:
   int MaxTimeSpentWithProcessingMs{50};
 
   /*! Time needed to process one frame in the latest recording round (in milliseconds) */
-  int LastProcessingTimePerFrameMs{1.0};
+  int LastProcessingTimePerFrameMs{1};
 
   /*! Channel ID to request the data from */
   std::string OutputChannelId{""};
@@ -115,8 +126,8 @@ private:
   std::string ConfigFilename{""};
 
   std::string PublisherMessageType{""};
-  std::vector<std::string> TransformNames{""};
-  std::vector<ImageStream> ImagesNames{""};
+  std::vector<std::string> TransformNames{};
+  std::vector<ImageStream> ImagesNames{};
 
   double BroadcastStartTime{0.0};
 };

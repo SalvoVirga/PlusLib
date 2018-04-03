@@ -72,8 +72,8 @@ public:
   static PlusStatus PackImageMetaMessage(igtl::ImageMetaMessage::Pointer imageMetaMessage, PlusCommon::ImageMetaDataList& imageMetaDataList);
 
   /*! Pack transform message from tracked frame */
-  static PlusStatus PackTransformMessage(igtl::TransformMessage::Pointer transformMessage, PlusTransformName& transformName,
-                                         igtl::Matrix4x4& igtlMatrix, bool transformValid, double timestamp);
+  static PlusStatus PackTransformMessage(igtl::TransformMessage::Pointer transformMessage, const PlusTransformName &transformName,
+                                         igtl::Matrix4x4 &igtlMatrix, bool transformValid, double timestamp);
 
   /*! Pack poly data message from polydata */
   static PlusStatus PackPolyDataMessage(igtl::PolyDataMessage::Pointer polydataMessage, vtkSmartPointer<vtkPolyData> polyData, double timestamp);
@@ -90,7 +90,7 @@ public:
       vtkMatrix4x4* transformMatrix, std::string& transformName, double& timestamp, int crccheck);
 
   /*! Pack position message from tracked frame */
-  static PlusStatus PackPositionMessage(igtl::PositionMessage::Pointer positionMessage, PlusTransformName& transformName,
+  static PlusStatus PackPositionMessage(igtl::PositionMessage::Pointer positionMessage, const PlusTransformName &transformName,
                                         float position[3], float quaternion[4], double timestamp);
 
   /*! Unpack position message */
@@ -102,7 +102,7 @@ public:
 
 
   /*! Generate igtl::Matrix4x4 with the selected transform name from the transform repository */
-  static PlusStatus GetIgtlMatrix(igtl::Matrix4x4& igtlMatrix, vtkPlusTransformRepository* transformRepository, PlusTransformName& transformName);
+  static PlusStatus GetIgtlMatrix(igtl::Matrix4x4& igtlMatrix, vtkPlusTransformRepository* transformRepository, const PlusTransformName &transformName);
 
 protected:
   vtkPlusIgtlMessageCommon();

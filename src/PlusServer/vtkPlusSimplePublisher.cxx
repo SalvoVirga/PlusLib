@@ -1,5 +1,8 @@
 #include "vtkPlusSimplePublisher.h"
-#include <simple_msgs/image.hpp>
+#include "vtkPlusTrackedFrameList.h"
+#include <vtkMatrix4x4.h>
+
+vtkStandardNewMacro(vtkPlusSimplePublisher);
 
 //------------------------------------------------------------------------------
 vtkPlusSimplePublisher::vtkPlusSimplePublisher() :
@@ -53,7 +56,7 @@ PlusStatus vtkPlusSimplePublisher::ReadConfiguration(vtkXMLDataElement* serverEl
   if (defaultClientInfo != nullptr)
   {
     // Get the message type to publish
-    vtkXMLDataElement* messageTypes = xmldata->FindNestedElementWithName("MessageType");
+    vtkXMLDataElement* messageTypes = defaultClientInfo->FindNestedElementWithName("MessageType");
     if (messageTypes != NULL)
     {
         if (messageTypes->GetNumberOfNestedElements() > 1)
@@ -61,44 +64,46 @@ PlusStatus vtkPlusSimplePublisher::ReadConfiguration(vtkXMLDataElement* serverEl
           LOG_WARNING("A SIMPLE Publisher can only publish one message type. Only the first one will be used.");
         }
         auto messageName = messageTypes->GetNestedElement(0)->GetName();
-        if (name == nullptr || STRCASECMP(messageName, "Message") != 0) { continue; }
-        vtkXMLDataElement* typeElem = messageTypes->GetNestedElement(0);
-        XML_READ_STRING_ATTRIBUTE_NONMEMBER_REQUIRED(Type, PublisherMessageType, typeElem);
+        if (messageName != nullptr || STRCASECMP(messageName, "Message") == 0)
+        {
+          vtkXMLDataElement* typeElem = messageTypes->GetNestedElement(0);
+          XML_READ_STRING_ATTRIBUTE_NONMEMBER_REQUIRED(Type, PublisherMessageType, typeElem);
+        }
     }
+
     if (PublisherMessageType == "TRANSFORM")
     {
-      vtkXMLDataElement* transformNames = xmldata->FindNestedElementWithName("TransformNames");
+      vtkXMLDataElement* transformNames = defaultClientInfo->FindNestedElementWithName("TransformNames");
       if (transformNames != NULL)
       {
         for (int i = 0; i < transformNames->GetNumberOfNestedElements(); ++i)
         {
           const char* transform = transformNames->GetNestedElement(i)->GetName();
-          if (transform == NULL || STRCASECMP(transform, "Transform") != 0)
+          if (transform != NULL || STRCASECMP(transform, "Transform") == 0)
           {
-            continue;
-          }
-          vtkXMLDataElement* transformElem = transformNames->GetNestedElement(i);
-          std::string name{""};
-          XML_READ_STRING_ATTRIBUTE_NONMEMBER_OPTIONAL(Name, name, transformElem);
-          if (name.empty())
-          {
-            LOG_WARNING("In TransformNames child transform #" << i << " definition is incomplete: required Name attribute is missing.");
-            continue;
-          }
+            vtkXMLDataElement* transformElem = transformNames->GetNestedElement(i);
+            std::string name{""};
+            XML_READ_STRING_ATTRIBUTE_NONMEMBER_OPTIONAL(Name, name, transformElem);
+            if (name.empty())
+            {
+              LOG_WARNING("In TransformNames child transform #" << i << " definition is incomplete: required Name attribute is missing.");
+              continue;
+            }
 
-          PlusTransformName tName;
-          if (tName.SetTransformName(name) != PLUS_SUCCESS)
-          {
-            LOG_WARNING("Invalid transform name: " << name);
-            continue;
+            PlusTransformName tName;
+            if (tName.SetTransformName(name) != PLUS_SUCCESS)
+            {
+              LOG_WARNING("Invalid transform name: " << name);
+              continue;
+            }
+            TransformNames.push_back(name);
           }
-          TransformNames.push_back(tName);
         }
       }
     }
     else if (PublisherMessageType == "IMAGE")
     {
-        vtkXMLDataElement* imageNames = xmldata->FindNestedElementWithName("ImageNames");
+        vtkXMLDataElement* imageNames = defaultClientInfo->FindNestedElementWithName("ImageNames");
         if (imageNames != NULL)
         {
           for (int i = 0; i < imageNames->GetNumberOfNestedElements(); ++i)
@@ -151,11 +156,6 @@ PlusStatus vtkPlusSimplePublisher::StartSimpleService()
     DataSenderActive.first = true;
     DataSenderThreadId = Threader->SpawnThread((vtkThreadFunctionType)&DataSenderThread, this);
   }
-
-  std::ostringstream ss;
-  ss << "Data sent by default: ";
-  DefaultClientInfo.PrintSelf(ss, vtkIndent(0));
-  LOG_DEBUG(ss.str());
 
   BroadcastStartTime = vtkPlusAccurateTimer::GetSystemTime();
 
@@ -248,7 +248,7 @@ PlusStatus vtkPlusSimplePublisher::SendLatestFrames(vtkPlusSimplePublisher& self
   }
   int numberOfFramesToGet = std::max(self.MaxTimeSpentWithProcessingMs / self.LastProcessingTimePerFrameMs, 1);
   // Maximize the number of frames to send
-  numberOfFramesToGet = std::min(numberOfFramesToGet, self.MaxNumberOfIgtlMessagesToSend);
+  numberOfFramesToGet = std::min(numberOfFramesToGet, 1);
 
   if (self.BroadcastChannel != NULL)
   {
@@ -265,7 +265,7 @@ PlusStatus vtkPlusSimplePublisher::SendLatestFrames(vtkPlusSimplePublisher& self
         if (self.LastSentTrackedFrameTimestamp < oldestDataTimestamp)
         {
           LOG_INFO("Simple broadcasting started. No data was available between " << self.LastSentTrackedFrameTimestamp << "-" << oldestDataTimestamp << "sec, therefore no data were broadcasted during this time period.");
-          self.LastSentTrackedFrameTimestamp = oldestDataTimestamp + SAMPLING_SKIPPING_MARGIN_SEC;
+          self.LastSentTrackedFrameTimestamp = oldestDataTimestamp + 0.1;
         }
         static vtkPlusLogHelper logHelper(60.0, 500000);
         CUSTOM_RETURN_WITH_FAIL_IF(self.BroadcastChannel->GetTrackedFrameList(self.LastSentTrackedFrameTimestamp, trackedFrameList, numberOfFramesToGet) != PLUS_SUCCESS,
@@ -277,13 +277,12 @@ PlusStatus vtkPlusSimplePublisher::SendLatestFrames(vtkPlusSimplePublisher& self
   // There is no new frame in the buffer
   if (trackedFrameList->GetNumberOfTrackedFrames() == 0)
   {
-    vtkPlusAccurateTimer::Delay(DELAY_ON_NO_NEW_FRAMES_SEC);
+    vtkPlusAccurateTimer::Delay(0.005);
     elapsedTimeSinceLastPacketSentSec += vtkPlusAccurateTimer::GetSystemTime() - startTimeSec;
 
     // Send keep alive packet to clients
-    if (elapsedTimeSinceLastPacketSentSec > self.KeepAliveIntervalSec)
+    if (elapsedTimeSinceLastPacketSentSec > 0.25)
     {
-      self.KeepAlive();
       elapsedTimeSinceLastPacketSentSec = 0;
       return PLUS_SUCCESS;
     }
@@ -332,14 +331,14 @@ PlusStatus vtkPlusSimplePublisher::SendTrackedFrame(PlusTrackedFrame& trackedFra
   if (PublisherMessageType == "TRANSFORM") { /* TODO */ }
   else if (PublisherMessageType == "IMAGE")
   {
-    for (auto& imageStream : ImageStreams)
+    for (auto& imageStream : ImagesNames)
     {
       PlusTransformName imageTransformName = PlusTransformName(imageStream.Name, imageStream.EmbeddedTransformToFrame);
       vtkSmartPointer<vtkMatrix4x4> matrix = vtkSmartPointer<vtkMatrix4x4>::New();
       bool isValid;
-      if (transformRepository->GetTransform(imageTransformName, matrix.Get(), &isValid) != PLUS_SUCCESS)
+      if (TransformRepository->GetTransform(imageTransformName, matrix.Get(), &isValid) != PLUS_SUCCESS)
       {
-        LOG_WARNING("Failed to create " << messageType << " message: cannot get image transform");
+        LOG_WARNING("Failed to create " << PublisherMessageType << " message: cannot get image transform");
         numberOfErrors++;
         continue;
       }
@@ -359,12 +358,13 @@ PlusStatus vtkPlusSimplePublisher::SendTrackedFrame(PlusTrackedFrame& trackedFra
       }
 
       simple_msgs::Header imageHeader;
-      imageHeader.setSequenceNumber(ImageStream.SequenceNumber);
+      imageHeader.setSequenceNumber(imageStream.SequenceNumber);
       imageHeader.setFrameID(deviceName);
       imageHeader.setTimestamp(trackedFrame.GetTimestamp());
-      imageMessage.setHeader(imageHeader);
 
       simple_msgs::Image<uint8_t> imageMessage;
+      imageMessage.setHeader(imageHeader);
+
       vtkImageData* frameImage = trackedFrame.GetImageData()->GetImage();
 
       int imageSizePixels[3] = { 0 };
@@ -384,7 +384,7 @@ PlusStatus vtkPlusSimplePublisher::SendTrackedFrame(PlusTrackedFrame& trackedFra
       imageMessage.setImageData(vtkImagePointer, imageSize, 1);
 
       Publisher.publish(imageMessage);
-      ++ImageStream.SequenceNumber;
+      ++imageStream.SequenceNumber;
     }
 
   }

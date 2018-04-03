@@ -49,7 +49,7 @@ void vtkPlusIgtlMessageCommon::PrintSelf(ostream& os, vtkIndent indent)
 //----------------------------------------------------------------------------
 PlusStatus vtkPlusIgtlMessageCommon::GetIgtlMatrix(igtl::Matrix4x4& igtlMatrix,
     vtkPlusTransformRepository* transformRepository,
-    PlusTransformName& transformName)
+    const PlusTransformName& transformName)
 {
   igtl::IdentityMatrix(igtlMatrix);
 
@@ -472,7 +472,7 @@ PlusStatus vtkPlusIgtlMessageCommon::PackImageMetaMessage(igtl::ImageMetaMessage
 
 //-------------------------------------------------------------------------------
 PlusStatus vtkPlusIgtlMessageCommon::PackTransformMessage(igtl::TransformMessage::Pointer transformMessage,
-    PlusTransformName& transformName,
+    const PlusTransformName& transformName,
     igtl::Matrix4x4& igtlMatrix,
     bool transformValid,
     double timestamp)
@@ -691,7 +691,7 @@ PlusStatus vtkPlusIgtlMessageCommon::UnpackTransformMessage(igtl::MessageHeader:
 
 //----------------------------------------------------------------------------
 PlusStatus vtkPlusIgtlMessageCommon::PackPositionMessage(igtl::PositionMessage::Pointer positionMessage,
-    PlusTransformName& transformName,
+    const PlusTransformName& transformName,
     float position[3],
     float quaternion[4],
     double timestamp)

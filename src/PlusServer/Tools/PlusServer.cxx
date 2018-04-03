@@ -184,7 +184,7 @@ int main(int argc, char** argv)
     // This is a PlusPublisher tag, let's create it
     vtkSmartPointer<vtkPlusSimplePublisher> publisher = vtkSmartPointer<vtkPlusSimplePublisher>::New();
     LOG_DEBUG("Initializing Plus SIMPLE publisher... ");
-    if (server->Start(dataCollector, transformRepository, serverElement, configFilePath) != PLUS_SUCCESS)
+    if (publisher->Start(dataCollector, transformRepository, serverElement, configFilePath) != PLUS_SUCCESS)
     {
       LOG_ERROR("Failed to start SIMPLE publisher");
       exit(EXIT_FAILURE);
@@ -218,10 +218,6 @@ int main(int argc, char** argv)
     {
       server->ProcessPendingCommands();
     }
-    for (auto publisher : simplePublisherList)
-    {
-        publisher->ProcessPendingCommands();
-    }
 #if _WIN32
     // Check if received message that requested process termination (non-Windows systems always use signals).
     // Need to do it before processing messages.
@@ -234,10 +230,6 @@ int main(int argc, char** argv)
   for (auto server : igtlServerList)
   {
     server->Stop();
-  }
-  for (auto publisher : simplePublisherList)
-  {
-      publisher->Stop();
   }
   LOG_INFO("Shutdown successful.");
 
