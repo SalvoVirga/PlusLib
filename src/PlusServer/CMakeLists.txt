@@ -2,12 +2,12 @@ PROJECT(PlusServer)
 
 # --------------------------------------------------------------------------
 # Sources
-SET(${PROJECT_NAME}_SRCS
+SET(${PROJECT_NAME}_CMD_SRCS
   vtkPlusSimplePublisher.cxx
   vtkPlusOpenIGTLinkServer.cxx
   vtkPlusOpenIGTLinkClient.cxx
-  vtkPlusCommandResponse.cxx
   vtkPlusCommandProcessor.cxx
+  vtkPlusCommandResponse.cxx
   Commands/vtkPlusCommand.cxx
   Commands/vtkPlusVersionCommand.cxx
   Commands/vtkPlusReconstructVolumeCommand.cxx
@@ -20,10 +20,18 @@ SET(${PROJECT_NAME}_SRCS
   Commands/vtkPlusGetPolydataCommand.cxx
   Commands/vtkPlusGetTransformCommand.cxx
   Commands/vtkPlusSetUsParameterCommand.cxx
+  Commands/vtkPlusAddRecordingDeviceCommand.cxx
+  )
+SET(${PROJECT_NAME}_SRCS
+  vtkPlusOpenIGTLinkServer.cxx
+  vtkPlusOpenIGTLinkClient.cxx
+  vtkPlusCommandResponse.cxx
+  vtkPlusCommandProcessor.cxx
+  ${${PROJECT_NAME}_CMD_SRCS}
   )
 
 IF(MSVC OR ${CMAKE_GENERATOR} MATCHES "Xcode")
-  SET(${PROJECT_NAME}_HDRS
+  SET(${PROJECT_NAME}_CMD_HDRS
     vtkPlusSimplePublisher.h
     vtkPlusOpenIGTLinkServer.h
     vtkPlusOpenIGTLinkClient.h
@@ -41,6 +49,14 @@ IF(MSVC OR ${CMAKE_GENERATOR} MATCHES "Xcode")
     Commands/vtkPlusGetPolydataCommand.h
     Commands/vtkPlusGetTransformCommand.h
     Commands/vtkPlusSetUsParameterCommand.h
+    Commands/vtkPlusAddRecordingDeviceCommand.h
+    )
+  SET(${PROJECT_NAME}_HDRS
+    vtkPlusOpenIGTLinkServer.h
+    vtkPlusOpenIGTLinkClient.h
+    vtkPlusCommandResponse.h
+    vtkPlusCommandProcessor.h
+    ${${PROJECT_NAME}_CMD_HDRS}
     )
 ENDIF()
 
@@ -98,6 +114,8 @@ IF(NOT (MSVC OR ${CMAKE_GENERATOR} MATCHES "Xcode"))
 ENDIF()
 TARGET_LINK_LIBRARIES(vtk${PROJECT_NAME} PUBLIC ${${PROJECT_NAME}_LIBS})
 TARGET_LINK_LIBRARIES(vtk${PROJECT_NAME} PRIVATE ${${PROJECT_NAME}_PRIVATE_LIBS})
+
+source_group("Commands" FILES ${${PROJECT_NAME}_CMD_HDRS} ${${PROJECT_NAME}_CMD_SRCS})
 
 # --------------------------------------------------------------------------
 # Set external MS project
