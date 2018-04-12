@@ -37,7 +37,7 @@ public:
   PlusStatus Start(vtkPlusDataCollector* dataCollector, vtkPlusTransformRepository* transformRepository, vtkXMLDataElement* serverElement, const std::string& configFilePath);
 
   /*! Stop the SIMPLE Publisher */
-  //PlusStatus Stop();
+  PlusStatus Stop();
 
   /*! Read the configuration file in XML format and set up the devices */
   virtual PlusStatus ReadConfiguration(vtkXMLDataElement* serverElement, const std::string& aFilename);

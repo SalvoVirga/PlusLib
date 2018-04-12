@@ -40,13 +40,12 @@ void CheckConsoleWindowCloseRequested(HWND consoleHwnd);
 int main(int argc, char** argv)
 {
   // Check command line arguments.
-  bool printHelp(false);
+  bool printHelp{false};
   std::string inputConfigFileName{""};
-  std::string testingConfigFileName{""};
-  int verboseLevel = vtkPlusLogger::LOG_LEVEL_UNDEFINED;
-  double runTimeSec = 0.0;
+  int verboseLevel{vtkPlusLogger::LOG_LEVEL_UNDEFINED};
+  double runTimeSec{0.0};
 
-  const int numOfTestClientsToConnect = 5; // only if testing is enabled S
+  const int numOfTestClientsToConnect{5}; // only if testing is enabled S
 
   vtksys::CommandLineArguments args;
   args.Initialize(argc, argv);
@@ -81,7 +80,7 @@ int main(int argc, char** argv)
   LOG_INFO("Logging at level " << vtkPlusLogger::Instance()->GetLogLevel() << " (" << vtkPlusLogger::Instance()->GetLogLevelString() << ") to file: " << vtkPlusLogger::Instance()->GetLogFileName());
 
   // Read main configuration file
-  std::string configFilePath = inputConfigFileName;
+  std::string configFilePath{inputConfigFileName};
   if (!vtksys::SystemTools::FileExists(configFilePath.c_str(), true))
   {
     configFilePath = vtkPlusConfig::GetInstance()->GetDeviceSetConfigurationPath(inputConfigFileName);
@@ -140,7 +139,7 @@ int main(int argc, char** argv)
   // OpenIGTLink Servers
   LOG_INFO("Server status: Starting OpenIGTLink servers.");
   std::vector<vtkPlusOpenIGTLinkServer*> igtlServerList;
-  int igltServerCount(0);
+  int igltServerCount{0};
   for (int i = 0; i < configRootElement->GetNumberOfNestedElements(); ++i)
   {
     vtkXMLDataElement* serverElement = configRootElement->GetNestedElement(i);
@@ -149,9 +148,9 @@ int main(int argc, char** argv)
       continue;
     }
 
-    igltServerCount++;
+    ++igltServerCount;
 
-    // This is a PlusServer tag, let's create it
+    // This is a PlusOIGTLServer tag, let's create it
     vtkSmartPointer<vtkPlusOpenIGTLinkServer> server = vtkSmartPointer<vtkPlusOpenIGTLinkServer>::New();
     LOG_DEBUG("Initializing Plus OpenIGTLink server... ");
     if (server->Start(dataCollector, transformRepository, serverElement, configFilePath) != PLUS_SUCCESS)
@@ -170,7 +169,7 @@ int main(int argc, char** argv)
   // SIMPLE Publishers
   LOG_INFO("Server status: Starting SIMPLE publishers.");
   std::vector<vtkPlusSimplePublisher*> simplePublisherList;
-  int simpleServerCount(0);
+  int simpleServerCount{0};
   for (int i = 0; i < configRootElement->GetNumberOfNestedElements(); ++i)
   {
     vtkXMLDataElement* serverElement = configRootElement->GetNestedElement(i);
@@ -179,9 +178,9 @@ int main(int argc, char** argv)
       continue;
     }
 
-    simpleServerCount++;
+    ++simpleServerCount;
 
-    // This is a PlusPublisher tag, let's create it
+    // This is a PlusSimplePublisher tag, let's create it
     vtkSmartPointer<vtkPlusSimplePublisher> publisher = vtkSmartPointer<vtkPlusSimplePublisher>::New();
     LOG_DEBUG("Initializing Plus SIMPLE publisher... ");
     if (publisher->Start(dataCollector, transformRepository, serverElement, configFilePath) != PLUS_SUCCESS)
@@ -193,11 +192,10 @@ int main(int argc, char** argv)
   }
   if (simpleServerCount == 0)
   {
-    LOG_ERROR("No vtkPlusSimplePublisher tags were found in the configuration file.");
-    exit(EXIT_FAILURE);
+    LOG_WARNING("No vtkPlusSimplePublisher tags were found in the configuration file.");
   }
 
-  double startTime = vtkPlusAccurateTimer::GetSystemTime();
+  double startTime{vtkPlusAccurateTimer::GetSystemTime()};
 
   LOG_INFO("Server status: Server(s) are running.");
   LOG_INFO("Press Ctrl-C to quit.");
@@ -208,13 +206,13 @@ int main(int argc, char** argv)
   HWND consoleHwnd = GetConsoleWindow();
 #endif
 
-  bool neverStop = (runTimeSec == 0.0);
+  bool neverStop{runTimeSec == 0.0};
 
   // Run server until requested
-  const double commandQueuePollIntervalSec = 0.010;
+  const double commandQueuePollIntervalSec{0.010};
   while ((neverStop || (vtkPlusAccurateTimer::GetSystemTime() < startTime + runTimeSec)) && !stopRequested)
   {
-    for (auto server : igtlServerList)
+    for (const auto& server : igtlServerList)
     {
       server->ProcessPendingCommands();
     }
@@ -227,9 +225,13 @@ int main(int argc, char** argv)
     vtkPlusAccurateTimer::DelayWithEventProcessing(commandQueuePollIntervalSec);
   }
 
-  for (auto server : igtlServerList)
+  for (const auto& server : igtlServerList)
   {
     server->Stop();
+  }
+  for (const auto& publisher : simplePublisherList)
+  {
+    publisher->Stop();
   }
   LOG_INFO("Shutdown successful.");
 
