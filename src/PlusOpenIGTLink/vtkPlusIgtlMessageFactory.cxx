@@ -162,8 +162,6 @@ PlusStatus vtkPlusIgtlMessageFactory::PackMessages(const PlusIgtlClientInfo& cli
     {
       for (auto& imageStream : clientInfo.ImageStreams)
       {
-        PlusIgtlClientInfo::ImageStream imageStream = (*imageStreamIterator);
-
         // Set transform name to [Name]To[CoordinateFrame]
         PlusTransformName imageTransformName = PlusTransformName(imageStream.Name, imageStream.EmbeddedTransformToFrame);
 
