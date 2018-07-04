@@ -43,6 +43,9 @@ See License.txt for details.
 #ifdef PLUS_USE_INTELREALSENSE
   #include "vtkPlusIntelRealSenseTracker.h"
 #endif
+#ifdef PLUS_USE_INTELREALSENSE_CAM
+  #include "vtkPlusIntelRealSenseCamera.h"
+#endif
 #ifdef PLUS_USE_OPTICAL_MARKER_TRACKER
   #include "vtkPlusOpticalMarkerTracker.h"
 #endif
@@ -183,6 +186,10 @@ See License.txt for details.
 #ifdef PLUS_USE_INFRARED_SEEK_CAM
   #include "vtkInfraredSeekCam.h" 
 #endif
+
+#ifdef PLUS_USE_INFRARED_TEQ1_CAM
+  #include "vtkInfraredTEQ1Cam.h" 
+#endif
 //----------------------------------------------------------------------------
 
 vtkStandardNewMacro(vtkPlusDeviceFactory);
@@ -221,6 +228,10 @@ vtkPlusDeviceFactory::vtkPlusDeviceFactory()
 #ifdef PLUS_USE_INTELREALSENSE
   RegisterDevice("IntelRealSenseTracker", "vtkPlusIntelRealSenseTracker", (PointerToDevice)&vtkPlusIntelRealSenseTracker::New);
 #endif
+#ifdef PLUS_USE_INTELREALSENSE_CAM
+  RegisterDevice("IntelRealSenseCamera", "vtkPlusIntelRealSenseCamera", (PointerToDevice)&vtkPlusIntelRealSenseCamera::New);
+#endif
+
 #ifdef PLUS_USE_OPTICAL_MARKER_TRACKER
   RegisterDevice("OpticalMarkerTracker", "vtkPlusOpticalMarkerTracker", (PointerToDevice)&vtkPlusOpticalMarkerTracker::New);
 #endif
@@ -333,6 +344,10 @@ vtkPlusDeviceFactory::vtkPlusDeviceFactory()
 
 #ifdef PLUS_USE_INFRARED_SEEK_CAM
   RegisterDevice("InfraredSeekCam", "vtkInfraredSeekCam", (PointerToDevice)&vtkInfraredSeekCam::New);
+#endif
+
+#ifdef PLUS_USE_INFRARED_TEQ1_CAM
+  RegisterDevice("InfraredTEQ1Cam", "vtkInfraredTEQ1Cam", (PointerToDevice)&vtkInfraredTEQ1Cam::New);
 #endif
 
   // Virtual Devices
