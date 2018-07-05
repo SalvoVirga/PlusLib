@@ -40,7 +40,7 @@ ENDIF()
 
 OPTION(PLUS_USE_SIMPLE "Use the SIMPLE library" OFF)
 IF(PLUS_USE_SIMPLE)
-  FIND_PACKAGE(simple REQUIRED)
+  FIND_PACKAGE(simple REQUIRED NO_MODULE)
 ENDIF()
 
 # --------------------------------------------------------------------------
@@ -483,6 +483,12 @@ IF(${PLUS_USE_OpenIGTLink})
   # use the relative path instead of absolute path
   FILE(RELATIVE_PATH OpenIGTLink_DIR ${CMAKE_INSTALL_PREFIX} ${OpenIGTLink_DIR})
   SET(OpenIGTLink_DIR "\${PLUSLIB_INSTALL_PATH}/${OpenIGTLink_DIR}")
+ENDIF()
+
+IF(${PLUS_USE_SIMPLE})
+  # use the relative path instead of absolute path
+  FILE(RELATIVE_PATH simple_DIR ${CMAKE_INSTALL_PREFIX} ${simple_DIR})
+  SET(simple_DIR "\${PLUSLIB_INSTALL_PATH}/${simple_DIR}")
 ENDIF()
 
 IF(${PLUS_USE_OvrvisionPro})

@@ -57,6 +57,12 @@ IF(NOT PLUSLIB_USE_FILE_INCLUDED)
     SET(OpenIGTLinkIO_DIR "@OpenIGTLinkIO_DIR@")
     FIND_PACKAGE(OpenIGTLinkIO PATHS "@OpenIGTLinkIO_DIR@" NO_MODULE)
   ENDIF()
+  
+  SET(PLUS_USE_SIMPLE @PLUS_USE_SIMPLE@)
+  IF(PLUS_USE_SIMPLE)
+    SET(simple_DIR "@simple_DIR@")
+    FIND_PACKAGE(simple PATHS "@simple_DIR@" NO_MODULE)
+  ENDIF()
 
   SET(PLUS_USE_tesseract @PLUS_USE_tesseract@)
   IF(PLUS_USE_tesseract)
