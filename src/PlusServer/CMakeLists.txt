@@ -87,10 +87,11 @@ SET(${PROJECT_NAME}_LIBS
   vtkPlusDataCollection
   vtkPlusVolumeReconstruction
   vtkIOPLY
+  simple::simple-static
   )
+  
 SET(${PROJECT_NAME}_PRIVATE_LIBS
   igtlioConverter
-  simple::simple-static
   )
 
 # If igtlioConverter was compiled as a static library, we do not need igtlio in the install configuration

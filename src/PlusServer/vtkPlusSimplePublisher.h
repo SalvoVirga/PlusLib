@@ -12,8 +12,8 @@
 #include <vtkSmartPointer.h>
 
 // SIMPLE includes
-#include <simple/publisher.hpp>
-#include <simple_msgs/image.hpp>
+#include "simple/publisher.hpp"
+#include "simple_msgs/image.hpp"
 
 class vtkPlusServerExport vtkPlusSimplePublisher : public vtkObject {
 
