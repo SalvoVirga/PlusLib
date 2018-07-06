@@ -83,6 +83,7 @@ PlusStatus vtkPlusSimplePublisher::ReadConfiguration(vtkXMLDataElement* serverEl
               continue;
             }
             TransformNames.push_back(name);
+            TransformPublisher = simple::Publisher<simple_msgs::Pose>("tcp://*:" + std::to_string(ListeningPort));
           }
         }
       }
@@ -109,7 +110,7 @@ PlusStatus vtkPlusSimplePublisher::ReadConfiguration(vtkXMLDataElement* serverEl
             continue;
           }
           ImagesNames.emplace_back(ImageStream(imageName, embeddedTransformToFrame));
-          Publisher = simple::Publisher<simple_msgs::Image<uint8_t>>("tcp://*:" + std::to_string(ListeningPort));
+          ImagePublisher = simple::Publisher<simple_msgs::Image<uint8_t>>("tcp://*:" + std::to_string(ListeningPort));
         }
       }
     } else {
@@ -284,7 +285,15 @@ PlusStatus vtkPlusSimplePublisher::SendTrackedFrame(PlusTrackedFrame& trackedFra
   double timestampUniversal{vtkPlusAccurateTimer::GetUniversalTimeFromSystemTime(timestampSystem)};
   trackedFrame.SetTimestamp(timestampUniversal);
 
-  if (PublisherMessageType == "TRANSFORM") { /* TODO: Not currently implemented */
+  if (PublisherMessageType == "TRANSFORM") {
+    // TODO
+    simple_msgs::Pose pose;
+    for (auto& transformName : TransformNames) {
+      vtkSmartPointer<vtkMatrix4x4> matrix = vtkSmartPointer<vtkMatrix4x4>::New();
+      TransformRepository->GetTransform(transformName, matrix.Get());
+      TransformPublisher.publish(vtkMatrixToSimplePose(matrix.Get()));
+    }
+
   } else if (PublisherMessageType == "IMAGE") {
     for (auto& imageStream : ImagesNames) {
       PlusTransformName imageTransformName = PlusTransformName(imageStream.Name, imageStream.EmbeddedTransformToFrame);
@@ -329,41 +338,14 @@ PlusStatus vtkPlusSimplePublisher::SendTrackedFrame(PlusTrackedFrame& trackedFra
       imageMessage.setImageResolution(imageSpacingMm[0], imageSpacingMm[1], imageSpacingMm[2]);
       imageMessage.setImageEncoding("TODO");
 
-      double rotation_matrix[3][3];
-      rotation_matrix[0][0] = matrix->GetElement(0, 0);
-      rotation_matrix[0][1] = matrix->GetElement(0, 1);
-      rotation_matrix[0][2] = matrix->GetElement(0, 2);
-      rotation_matrix[1][0] = matrix->GetElement(1, 0);
-      rotation_matrix[1][1] = matrix->GetElement(1, 1);
-      rotation_matrix[1][2] = matrix->GetElement(1, 2);
-      rotation_matrix[2][0] = matrix->GetElement(2, 0);
-      rotation_matrix[2][1] = matrix->GetElement(2, 1);
-      rotation_matrix[2][2] = matrix->GetElement(2, 2);
-
-      vtkQuaternion<double> quaternion;
-      quaternion.FromMatrix3x3(rotation_matrix);
-
-      // Translation
-      simple_msgs::Point image_position;
-      image_position.setX(matrix->GetElement(0, 3));
-      image_position.setY(matrix->GetElement(1, 3));
-      image_position.setZ(matrix->GetElement(2, 3));
-
-      // Rotation
-      simple_msgs::Quaternion image_orientation;
-      image_orientation.setX(quaternion.GetX());
-      image_orientation.setY(quaternion.GetY());
-      image_orientation.setZ(quaternion.GetZ());
-      image_orientation.setW(quaternion.GetW());
-
-      imageMessage.setOrigin({image_position, image_orientation});
+      imageMessage.setOrigin(vtkMatrixToSimplePose(matrix.Get()));
 
       const uint8_t* vtkImagePointer = static_cast<const uint8_t*>(frameImage->GetScalarPointer());
       const int imageSize =
           imageSizePixels[0] * imageSizePixels[1] * imageSizePixels[2] * sizeof(uint8_t);  // TODO: check
       imageMessage.setImageData(vtkImagePointer, imageSize, 1);
 
-      Publisher.publish(imageMessage);
+      ImagePublisher.publish(imageMessage);
       ++imageStream.SequenceNumber;
     }
   }
@@ -372,6 +354,38 @@ PlusStatus vtkPlusSimplePublisher::SendTrackedFrame(PlusTrackedFrame& trackedFra
   trackedFrame.SetTimestamp(timestampSystem);
 
   return (numberOfErrors == 0 ? PLUS_SUCCESS : PLUS_FAIL);
+}
+
+//----------------------------------------------------------------------------
+simple_msgs::Pose vtkPlusSimplePublisher::vtkMatrixToSimplePose(vtkMatrix4x4* matrix) {
+  double rotation_matrix[3][3];
+  rotation_matrix[0][0] = matrix->GetElement(0, 0);
+  rotation_matrix[0][1] = matrix->GetElement(0, 1);
+  rotation_matrix[0][2] = matrix->GetElement(0, 2);
+  rotation_matrix[1][0] = matrix->GetElement(1, 0);
+  rotation_matrix[1][1] = matrix->GetElement(1, 1);
+  rotation_matrix[1][2] = matrix->GetElement(1, 2);
+  rotation_matrix[2][0] = matrix->GetElement(2, 0);
+  rotation_matrix[2][1] = matrix->GetElement(2, 1);
+  rotation_matrix[2][2] = matrix->GetElement(2, 2);
+
+  vtkQuaternion<double> quaternion;
+  quaternion.FromMatrix3x3(rotation_matrix);
+
+  // Translation
+  simple_msgs::Point image_position;
+  image_position.setX(matrix->GetElement(0, 3));
+  image_position.setY(matrix->GetElement(1, 3));
+  image_position.setZ(matrix->GetElement(2, 3));
+
+  // Rotation
+  simple_msgs::Quaternion image_orientation;
+  image_orientation.setX(quaternion.GetX());
+  image_orientation.setY(quaternion.GetY());
+  image_orientation.setZ(quaternion.GetZ());
+  image_orientation.setW(quaternion.GetW());
+
+  return {image_position, image_orientation};
 }
 
 //----------------------------------------------------------------------------

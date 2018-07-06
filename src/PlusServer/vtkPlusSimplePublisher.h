@@ -16,11 +16,8 @@
 #include "simple_msgs/image.hpp"
 
 class vtkPlusServerExport vtkPlusSimplePublisher : public vtkObject {
-
 public:
-
-  struct ImageStream
-  {
+  struct ImageStream {
     ImageStream() = default;
     ImageStream(std::string n_1, std::string n_2) : Name(n_1), EmbeddedTransformToFrame(n_2) {}
 
@@ -34,7 +31,8 @@ public:
 
   static vtkPlusSimplePublisher* New();
   /*! Configures and starts the server from the provided PlusSimplePublisher XML element */
-  PlusStatus Start(vtkPlusDataCollector* dataCollector, vtkPlusTransformRepository* transformRepository, vtkXMLDataElement* serverElement, const std::string& configFilePath);
+  PlusStatus Start(vtkPlusDataCollector* dataCollector, vtkPlusTransformRepository* transformRepository,
+                   vtkXMLDataElement* serverElement, const std::string& configFilePath);
 
   /*! Stop the SIMPLE Publisher */
   PlusStatus Stop();
@@ -67,8 +65,8 @@ public:
   vtkGetStdStringMacro(ConfigFilename);
 
   /*!
-    Execute all commands in the queue from the current thread (useful if commands should be executed from the main thread)
-    \return Number of executed commands
+    Execute all commands in the queue from the current thread (useful if commands should be executed from the main
+    thread) \return Number of executed commands
   */
   int ProcessPendingCommands();
 
@@ -77,9 +75,9 @@ protected:
   virtual ~vtkPlusSimplePublisher() = default;
 
 private:
-
   /*! Simple publisher instance */
-  simple::Publisher<simple_msgs::Image<uint8_t>> Publisher;
+  simple::Publisher<simple_msgs::Image<uint8_t>> ImagePublisher;
+  simple::Publisher<simple_msgs::Pose> TransformPublisher;  // TODO
 
   /*! Transform repository instance */
   vtkSmartPointer<vtkPlusTransformRepository> TransformRepository{nullptr};
@@ -98,6 +96,8 @@ private:
 
   /*! Tracked frame interface, sends the selected message type and data to all clients */
   virtual PlusStatus SendTrackedFrame(PlusTrackedFrame& trackedFrame);
+
+  simple_msgs::Pose vtkMatrixToSimplePose(vtkMatrix4x4* matrix);
 
   /*! Server listening port */
   int ListeningPort{1};
@@ -132,4 +132,4 @@ private:
   double BroadcastStartTime{0.0};
 };
 
-#endif // vtkPlusSimplePublisher_H
+#endif  // vtkPlusSimplePublisher_H
