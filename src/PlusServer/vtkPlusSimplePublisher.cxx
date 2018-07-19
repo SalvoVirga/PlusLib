@@ -7,9 +7,6 @@
 vtkStandardNewMacro(vtkPlusSimplePublisher);
 
 //------------------------------------------------------------------------------
-vtkPlusSimplePublisher::vtkPlusSimplePublisher() : Threader(vtkSmartPointer<vtkMultiThreader>::New()) {}
-
-//------------------------------------------------------------------------------
 PlusStatus vtkPlusSimplePublisher::Start(vtkPlusDataCollector* dataCollector,
                                          vtkPlusTransformRepository* transformRepository,
                                          vtkXMLDataElement* serverElement, const std::string& configFilePath) {
@@ -129,10 +126,49 @@ PlusStatus vtkPlusSimplePublisher::StartSimpleService() {
     return PLUS_FAIL;
   }
 
+  // Before we spawn the thread, let's find the right channel to take our images from.
+  DataSenderActive.second = true;
+
+  DeviceCollection aCollection;
+  if (DataCollector->GetDevices(aCollection) != PLUS_SUCCESS || aCollection.size() == 0) {
+    LOG_ERROR("Unable to retrieve devices. Check configuration and connection.");
+    return PLUS_FAIL;
+  }
+
+  // Find the requested channel ID in all the devices
+  for (const auto& device : aCollection) {
+    if (device->GetOutputChannelByName(BroadcastChannel, GetOutputChannelId()) == PLUS_SUCCESS) { break; }
+  }
+
+  if (BroadcastChannel == nullptr) {
+    // The requested channel ID is not found
+    if (!GetOutputChannelId().empty()) {
+      // the user explicitly requested a specific channel, but none was found by that name
+      // this is an error
+      LOG_ERROR("Unable to start data sending. OutputChannelId not found: " << GetOutputChannelId());
+      return PLUS_FAIL;
+    }
+    // The user did not specify any channel, so just use the first channel that can be found in any device.
+    for (const auto& device : aCollection) {
+      if (device->OutputChannelCount() > 0) {
+        BroadcastChannel = *(device->GetOutputChannelsStart());
+        break;
+      }
+    }
+  }
+
+  // If we didn't find any channel then return
+  if (BroadcastChannel == nullptr) {
+    LOG_ERROR("There are no valid channels to publish. Please specify a valid channel in your configuration file.");
+    return PLUS_FAIL;
+  }
+
+  if (BroadcastChannel) { BroadcastChannel->GetMostRecentTimestamp(LastSentTrackedFrameTimestamp); }
+
   // If no thread was every spawned yet.
-  if (DataSenderThreadId < 0) {
+  if (!PublishThread.joinable()) {
     DataSenderActive.first = true;
-    DataSenderThreadId = Threader->SpawnThread((vtkThreadFunctionType)&DataSenderThread, this);
+    PublishThread = std::thread(&vtkPlusSimplePublisher::DataSenderThread, this);
   }
 
   BroadcastStartTime = vtkPlusAccurateTimer::GetSystemTime();
@@ -141,120 +177,63 @@ PlusStatus vtkPlusSimplePublisher::StartSimpleService() {
 }
 
 //----------------------------------------------------------------------------
-void* vtkPlusSimplePublisher::DataSenderThread(vtkMultiThreader::ThreadInfo* data) {
-  vtkPlusSimplePublisher* self = static_cast<vtkPlusSimplePublisher*>((data->UserData));
-  self->DataSenderActive.second = true;
+void* vtkPlusSimplePublisher::DataSenderThread() {
+  DataSenderActive.second = true;
 
-  vtkPlusDevice* aDevice{nullptr};
-  vtkPlusChannel* aChannel{nullptr};
-
-  DeviceCollection aCollection;
-  if (self->DataCollector->GetDevices(aCollection) != PLUS_SUCCESS || aCollection.size() == 0) {
-    LOG_ERROR("Unable to retrieve devices. Check configuration and connection.");
-    return NULL;
-  }
-
-  // Find the requested channel ID in all the devices
-  for (auto& device : aCollection) {
-    // TODO: we should not need this additional pointer.
-    aDevice = device;
-    if (aDevice->GetOutputChannelByName(aChannel, self->GetOutputChannelId()) == PLUS_SUCCESS) { break; }
-  }
-
-  if (aChannel == nullptr) {
-    // The requested channel ID is not found
-    if (!self->GetOutputChannelId().empty()) {
-      // the user explicitly requested a specific channel, but none was found by that name
-      // this is an error
-      LOG_ERROR("Unable to start data sending. OutputChannelId not found: " << self->GetOutputChannelId());
-      return nullptr;
-    }
-    // the user did not specify any channel, so just use the first channel that can be found in any device
-    for (auto& device : aCollection) {
-      // TODO: we should not need this additional pointer.
-      aDevice = device;
-      if (aDevice->OutputChannelCount() > 0) {
-        aChannel = *(aDevice->GetOutputChannelsStart());
-        break;
-      }
-    }
-  }
-
-  // If we didn't find any channel then return
-  if (aChannel == nullptr) { LOG_WARNING("There are no channels to publish."); }
-
-  self->BroadcastChannel = aChannel;
-  if (self->BroadcastChannel) { self->BroadcastChannel->GetMostRecentTimestamp(self->LastSentTrackedFrameTimestamp); }
-
-  double elapsedTimeSinceLastPacketSentSec = 0;
-  while (self->DataSenderActive.first) {
+  double elapsedTimeSinceLastPacketSentSec{0};
+  while (DataSenderActive.first) {
     // Send image/tracking/string data
-    SendLatestFrames(*self, elapsedTimeSinceLastPacketSentSec);
+    SendLatestFrames(elapsedTimeSinceLastPacketSentSec);
   }
   // Close thread
-  self->DataSenderThreadId = -1;
-  self->DataSenderActive.second = false;
+  DataSenderThreadId = -1;
+  DataSenderActive.second = false;
   return nullptr;
 }
 
 //----------------------------------------------------------------------------
-PlusStatus vtkPlusSimplePublisher::SendLatestFrames(vtkPlusSimplePublisher& self,
-                                                    double& elapsedTimeSinceLastPacketSentSec) {
+PlusStatus vtkPlusSimplePublisher::SendLatestFrames(double elapsedTimeSinceLastPacketSentSec) {
   vtkSmartPointer<vtkPlusTrackedFrameList> trackedFrameList = vtkSmartPointer<vtkPlusTrackedFrameList>::New();
   double startTimeSec{vtkPlusAccurateTimer::GetSystemTime()};
 
   // Acquire tracked frames since last acquisition (minimum 1 frame)
-  if (self.LastProcessingTimePerFrameMs < 1) {
+  if (LastProcessingTimePerFrameMs < 1) {
     // if processing was less than 1ms/frame then assume it was 1ms (1000FPS processing speed) to avoid division by zero
-    self.LastProcessingTimePerFrameMs = 1;
+    LastProcessingTimePerFrameMs = 1;
   }
-  int numberOfFramesToGet{std::max(self.MaxTimeSpentWithProcessingMs / self.LastProcessingTimePerFrameMs, 1)};
+  int numberOfFramesToGet{std::max(MaxTimeSpentWithProcessingMs / LastProcessingTimePerFrameMs, 1)};
   // Maximize the number of frames to send
-  numberOfFramesToGet = std::min(numberOfFramesToGet, 1);
-  // We are always gonna get 1 frame, should we just change this?
+  numberOfFramesToGet = std::min(numberOfFramesToGet, 100);
 
-  if (self.BroadcastChannel != nullptr) {
-    if ((self.BroadcastChannel->HasVideoSource() && !self.BroadcastChannel->GetVideoDataAvailable()) ||
-        (self.BroadcastChannel->ToolCount() > 0 && !self.BroadcastChannel->GetTrackingDataAvailable()) ||
-        (self.BroadcastChannel->FieldCount() > 0 && !self.BroadcastChannel->GetFieldDataAvailable())) {
+  if (BroadcastChannel != nullptr) {
+    if ((BroadcastChannel->HasVideoSource() && !BroadcastChannel->GetVideoDataAvailable()) ||
+        (BroadcastChannel->ToolCount() > 0 && !BroadcastChannel->GetTrackingDataAvailable()) ||
+        (BroadcastChannel->FieldCount() > 0 && !BroadcastChannel->GetFieldDataAvailable())) {
     } else {
       double oldestDataTimestamp{0.0};
-      if (self.BroadcastChannel->GetOldestTimestamp(oldestDataTimestamp) == PLUS_SUCCESS) {
-        if (self.LastSentTrackedFrameTimestamp < oldestDataTimestamp) {
+      if (BroadcastChannel->GetOldestTimestamp(oldestDataTimestamp) == PLUS_SUCCESS) {
+        if (LastSentTrackedFrameTimestamp < oldestDataTimestamp) {
           LOG_INFO("Simple broadcasting started. No data was available between "
-                   << self.LastSentTrackedFrameTimestamp << "-" << oldestDataTimestamp
+                   << LastSentTrackedFrameTimestamp << "-" << oldestDataTimestamp
                    << "sec, therefore no data were broadcasted during this time period.");
-          self.LastSentTrackedFrameTimestamp = oldestDataTimestamp + 0.1;
+          LastSentTrackedFrameTimestamp = oldestDataTimestamp + 0.1;
         }
         static vtkPlusLogHelper logHelper(60.0, 500000);
         CUSTOM_RETURN_WITH_FAIL_IF(
-            self.BroadcastChannel->GetTrackedFrameList(self.LastSentTrackedFrameTimestamp, trackedFrameList,
-                                                       numberOfFramesToGet) != PLUS_SUCCESS,
+            BroadcastChannel->GetTrackedFrameList(LastSentTrackedFrameTimestamp, trackedFrameList,
+                                                  numberOfFramesToGet) != PLUS_SUCCESS,
             "Failed to get tracked frame list from data collector (last recorded timestamp: "
-                << std::fixed << self.LastSentTrackedFrameTimestamp);
+                << std::fixed << LastSentTrackedFrameTimestamp);
       }
     }
   }
 
   // There is no new frame in the buffer
-  if (trackedFrameList->GetNumberOfTrackedFrames() == 0) {
-    vtkPlusAccurateTimer::Delay(0.005);
-    elapsedTimeSinceLastPacketSentSec += vtkPlusAccurateTimer::GetSystemTime() - startTimeSec;
+  if (trackedFrameList->GetNumberOfTrackedFrames() == 0) { return PLUS_FAIL; }
 
-    // Send keep alive packet to clients
-    if (elapsedTimeSinceLastPacketSentSec > 0.25) {
-      elapsedTimeSinceLastPacketSentSec = 0;
-      return PLUS_SUCCESS;
-    }
-
-    // TODO: this is all a bit useless, it might be enough to just send PLUS_FAIL.
-
-    return PLUS_FAIL;
-  }
-
-  for (unsigned int i = 0; i < trackedFrameList->GetNumberOfTrackedFrames(); ++i) {
+  for (auto i = 0; i < trackedFrameList->GetNumberOfTrackedFrames(); ++i) {
     // Send tracked frame
-    self.SendTrackedFrame(*trackedFrameList->GetTrackedFrame(i));
+    SendTrackedFrame(trackedFrameList->GetTrackedFrame(i));
     elapsedTimeSinceLastPacketSentSec = 0;
   }
 
@@ -263,32 +242,30 @@ PlusStatus vtkPlusSimplePublisher::SendLatestFrames(vtkPlusSimplePublisher& self
 
   // Update last processing time if new tracked frames have been acquired
   if (trackedFrameList->GetNumberOfTrackedFrames() > 0) {
-    self.LastProcessingTimePerFrameMs = computationTimeMs / trackedFrameList->GetNumberOfTrackedFrames();
+    LastProcessingTimePerFrameMs = computationTimeMs / trackedFrameList->GetNumberOfTrackedFrames();
   }
   return PLUS_SUCCESS;
 }
 
 //----------------------------------------------------------------------------
-PlusStatus vtkPlusSimplePublisher::SendTrackedFrame(PlusTrackedFrame& trackedFrame) {
+PlusStatus vtkPlusSimplePublisher::SendTrackedFrame(PlusTrackedFrame* trackedFrame) {
   int numberOfErrors{0};
 
   // Update transform repository with the tracked frame
   if (TransformRepository != nullptr) {
-    if (TransformRepository->SetTransforms(trackedFrame) != PLUS_SUCCESS) {
+    if (TransformRepository->SetTransforms(*trackedFrame) != PLUS_SUCCESS) {
       LOG_ERROR("Failed to set current transforms to transform repository");
       numberOfErrors++;
     }
   }
 
   // Convert relative timestamp to UTC
-  double timestampSystem{trackedFrame.GetTimestamp()};  // save original timestamp, we'll restore it later
+  double timestampSystem{trackedFrame->GetTimestamp()};  // save original timestamp, we'll restore it later
   double timestampUniversal{vtkPlusAccurateTimer::GetUniversalTimeFromSystemTime(timestampSystem)};
-  trackedFrame.SetTimestamp(timestampUniversal);
+  trackedFrame->SetTimestamp(timestampUniversal);
 
   if (PublisherMessageType == "TRANSFORM") {
-    // TODO
-    simple_msgs::Pose pose;
-    for (auto& transformName : TransformNames) {
+    for (const auto& transformName : TransformNames) {
       vtkSmartPointer<vtkMatrix4x4> matrix = vtkSmartPointer<vtkMatrix4x4>::New();
       TransformRepository->GetTransform(transformName, matrix.Get());
       TransformPublisher.publish(vtkMatrixToSimplePose(matrix.Get()));
@@ -296,23 +273,23 @@ PlusStatus vtkPlusSimplePublisher::SendTrackedFrame(PlusTrackedFrame& trackedFra
 
   } else if (PublisherMessageType == "IMAGE") {
     for (auto& imageStream : ImagesNames) {
-      PlusTransformName imageTransformName = PlusTransformName(imageStream.Name, imageStream.EmbeddedTransformToFrame);
+      PlusTransformName imageTransformName(imageStream.Name, imageStream.EmbeddedTransformToFrame);
       vtkSmartPointer<vtkMatrix4x4> matrix = vtkSmartPointer<vtkMatrix4x4>::New();
-      bool isValid{false};
-      if (TransformRepository->GetTransform(imageTransformName, matrix.Get(), &isValid) != PLUS_SUCCESS) {
-        LOG_WARNING("Failed to create " << PublisherMessageType << " message: cannot get image transform");
-        numberOfErrors++;
-        continue;
+      bool isTransformValid{false};
+      if (TransformRepository->GetTransform(imageTransformName, matrix.Get(), &isTransformValid) != PLUS_SUCCESS) {
+        LOG_WARNING("Could not obtain the image transform " << imageTransformName << " the message type "
+                                                            << PublisherMessageType
+                                                            << " will be created without a transform.");
       }
 
       std::string deviceName{imageTransformName.From() + std::string("_") + imageTransformName.To()};
-      if (trackedFrame.IsCustomFrameFieldDefined(PlusTrackedFrame::FIELD_FRIENDLY_DEVICE_NAME)) {
+      if (trackedFrame->IsCustomFrameFieldDefined(PlusTrackedFrame::FIELD_FRIENDLY_DEVICE_NAME)) {
         // Allow overriding of device name with something human readable
         // The transform name is passed in the metadata
-        deviceName = trackedFrame.GetCustomFrameField(PlusTrackedFrame::FIELD_FRIENDLY_DEVICE_NAME);
+        deviceName = trackedFrame->GetCustomFrameField(PlusTrackedFrame::FIELD_FRIENDLY_DEVICE_NAME);
       }
 
-      if (!trackedFrame.GetImageData()->IsImageValid()) {
+      if (!trackedFrame->GetImageData()->IsImageValid()) {
         LOG_WARNING("Unable to send image message - image data is NOT valid!");
         return PLUS_FAIL;
       }
@@ -320,12 +297,13 @@ PlusStatus vtkPlusSimplePublisher::SendTrackedFrame(PlusTrackedFrame& trackedFra
       simple_msgs::Header imageHeader;
       imageHeader.setSequenceNumber(imageStream.SequenceNumber);
       imageHeader.setFrameID(deviceName);
-      imageHeader.setTimestamp(trackedFrame.GetTimestamp());
+      imageHeader.setTimestamp(trackedFrame->GetTimestamp());
 
       simple_msgs::Image<uint8_t> imageMessage;
       imageMessage.setHeader(imageHeader);
 
-      vtkImageData* frameImage = trackedFrame.GetImageData()->GetImage();
+      // Convert the vtkImageData to a simple_msgs::Image message.
+      vtkImageData* frameImage = trackedFrame->GetImageData()->GetImage();
 
       int imageSizePixels[3]{0, 0, 0};
       double imageSpacingMm[3]{0, 0, 0};
@@ -336,13 +314,12 @@ PlusStatus vtkPlusSimplePublisher::SendTrackedFrame(PlusTrackedFrame& trackedFra
 
       imageMessage.setImageDimensions(imageSizePixels[0], imageSizePixels[1], imageSizePixels[2]);
       imageMessage.setImageResolution(imageSpacingMm[0], imageSpacingMm[1], imageSpacingMm[2]);
-      imageMessage.setImageEncoding("TODO");
+      imageMessage.setImageEncoding("");  // TODO
 
-      imageMessage.setOrigin(vtkMatrixToSimplePose(matrix.Get()));
+      if (isTransformValid) { imageMessage.setOrigin(vtkMatrixToSimplePose(matrix.Get())); }
 
       const uint8_t* vtkImagePointer = static_cast<const uint8_t*>(frameImage->GetScalarPointer());
-      const int imageSize =
-          imageSizePixels[0] * imageSizePixels[1] * imageSizePixels[2] * sizeof(uint8_t);  // TODO: check
+      const int imageSize = imageSizePixels[0] * imageSizePixels[1] * imageSizePixels[2] * sizeof(uint8_t);
       imageMessage.setImageData(vtkImagePointer, imageSize, 1);
 
       ImagePublisher.publish(imageMessage);
@@ -351,7 +328,7 @@ PlusStatus vtkPlusSimplePublisher::SendTrackedFrame(PlusTrackedFrame& trackedFra
   }
 
   // restore original timestamp
-  trackedFrame.SetTimestamp(timestampSystem);
+  trackedFrame->SetTimestamp(timestampSystem);
 
   return (numberOfErrors == 0 ? PLUS_SUCCESS : PLUS_FAIL);
 }

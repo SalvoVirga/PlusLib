@@ -1,6 +1,8 @@
 #ifndef __VTKPLUSSIMPLEPUBLISHER_H
 #define __VTKPLUSSIMPLEPUBLISHER_H
 
+#include <thread>
+
 // Local includes
 #include "vtkPlusDataCollector.h"
 #include "vtkPlusServerExport.h"
@@ -71,8 +73,10 @@ public:
   int ProcessPendingCommands();
 
 protected:
-  vtkPlusSimplePublisher();
-  virtual ~vtkPlusSimplePublisher() = default;
+  vtkPlusSimplePublisher() = default;
+  virtual ~vtkPlusSimplePublisher() {
+    if (PublishThread.joinable()) { PublishThread.join(); }
+  };
 
 private:
   /*! Simple publisher instance */
@@ -85,17 +89,17 @@ private:
   /*! Data collector instance */
   vtkSmartPointer<vtkPlusDataCollector> DataCollector{nullptr};
 
-  /*! Multithreader instance for controlling threads */
-  vtkSmartPointer<vtkMultiThreader> Threader{nullptr};
+  /*! Publish Thread */
+  std::thread PublishThread{};
 
   /*! Thread for sending data to clients */
-  static void* DataSenderThread(vtkMultiThreader::ThreadInfo* data);
+  void* DataSenderThread();
 
   /*! Attempt to send any unsent frames to clients, if unsuccessful, accumulate an elapsed time */
-  static PlusStatus SendLatestFrames(vtkPlusSimplePublisher& self, double& elapsedTimeSinceLastPacketSentSec);
+  PlusStatus SendLatestFrames(double elapsedTimeSinceLastPacketSentSec);
 
   /*! Tracked frame interface, sends the selected message type and data to all clients */
-  virtual PlusStatus SendTrackedFrame(PlusTrackedFrame& trackedFrame);
+  virtual PlusStatus SendTrackedFrame(PlusTrackedFrame* trackedFrame);
 
   simple_msgs::Pose vtkMatrixToSimplePose(vtkMatrix4x4* matrix);
 

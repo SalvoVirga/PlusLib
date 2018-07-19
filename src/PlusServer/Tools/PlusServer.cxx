@@ -160,11 +160,7 @@ int main(int argc, char** argv)
     }
     igtlServerList.push_back(server);
   }
-  if (igltServerCount == 0)
-  {
-    LOG_ERROR("No vtkPlusOpenIGTLinkServer tags were found in the configuration file. Please add at least one.");
-    exit(EXIT_FAILURE);
-  }
+  if (igltServerCount == 0) { LOG_WARNING("No vtkPlusOpenIGTLinkServer tags were found in the configuration file."); }
 
   // SIMPLE Publishers
   LOG_INFO("Server status: Starting SIMPLE publishers.");
@@ -190,9 +186,12 @@ int main(int argc, char** argv)
     }
     simplePublisherList.push_back(publisher);
   }
-  if (simpleServerCount == 0)
-  {
-    LOG_WARNING("No vtkPlusSimplePublisher tags were found in the configuration file.");
+  if (simpleServerCount == 0) { LOG_WARNING("No vtkPlusSimplePublisher tags were found in the configuration file."); }
+
+  if (igltServerCount == 0 && simpleServerCount == 0) {
+    LOG_ERROR("No vtkPlusOpenIGTLinkServer or vtkPlusSimplePublisher tags were found in the configuration file. Please "
+              "add at least one.");
+    exit(EXIT_FAILURE);
   }
 
   double startTime{vtkPlusAccurateTimer::GetSystemTime()};
