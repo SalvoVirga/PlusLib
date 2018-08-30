@@ -313,7 +313,7 @@ PlusStatus vtkPlusSimplePublisher::SendTrackedFrame(PlusTrackedFrame* trackedFra
       frameImage->GetOrigin(imageOriginMm);
 
       imageMessage.setImageDimensions(imageSizePixels[0], imageSizePixels[1], imageSizePixels[2]);
-      imageMessage.setImageResolution(imageSpacingMm[0], imageSpacingMm[1], imageSpacingMm[2]);
+      imageMessage.setImageSpacing(imageSpacingMm[0], imageSpacingMm[1], imageSpacingMm[2]);
       imageMessage.setImageEncoding("");  // TODO
 
       if (isTransformValid) { imageMessage.setOrigin(vtkMatrixToSimplePose(matrix.Get())); }
