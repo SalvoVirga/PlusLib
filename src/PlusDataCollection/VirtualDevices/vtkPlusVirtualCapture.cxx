@@ -201,6 +201,12 @@ PlusStatus vtkPlusVirtualCapture::OpenFile(const char* aFilename)
   }
 
   this->Writer = vtkPlusSequenceIO::CreateSequenceHandlerForFile(aFilename);
+  if (!this->Writer)
+  {
+    LOG_ERROR("Could not create writer for file: " << aFilename);
+    return PLUS_FAIL;
+  }
+
   this->Writer->SetUseCompression(this->EnableFileCompression);
   this->Writer->SetTrackedFrameList(this->RecordedFrames);
   // Need to set the filename before finalizing header, because the pixel data file name depends on the file extension
@@ -538,7 +544,7 @@ PlusStatus vtkPlusVirtualCapture::TakeSnapshot()
 
   // Check if there are any valid transforms
   std::vector<PlusTransformName> transformNames;
-  trackedFrame.GetCustomFrameTransformNameList(transformNames);
+  trackedFrame.GetFrameTransformNameList(transformNames);
   bool validFrame = false;
 
   if (transformNames.size() == 0)
@@ -550,7 +556,7 @@ PlusStatus vtkPlusVirtualCapture::TakeSnapshot()
     for (std::vector<PlusTransformName>::iterator it = transformNames.begin(); it != transformNames.end(); ++it)
     {
       TrackedFrameFieldStatus status = FIELD_INVALID;
-      trackedFrame.GetCustomFrameTransformStatus(*it, status);
+      trackedFrame.GetFrameTransformStatus(*it, status);
 
       if (status == FIELD_OK)
       {

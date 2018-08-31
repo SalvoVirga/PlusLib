@@ -15,24 +15,32 @@ Adam Rankin (Robarts Research Institute, The University of Western Ontario)
 Andras Lasso (Queen's University, Kingston, Ontario, Canada)
 =========================================================================*/
 
+// Local includes
 #include "PlusConfigure.h"
-
-#include "ImagingModes.h" // Ulterius imaging modes
-#include "ulterius_def.h"
-#include "vtkImageData.h"
-#include "vtkInformation.h"
-#include "vtkInformationVector.h"
-#include "vtkMultiThreader.h"
-#include "vtkObjectFactory.h"
 #include "vtkPlusChannel.h"
 #include "vtkPlusDataSource.h"
 #include "vtkPlusSonixVideoSource.h"
-#include "vtkStreamingDemandDrivenPipeline.h"
-#include "vtkTimerLog.h"
-#include "vtkUnsignedCharArray.h"
-#include "vtkPlusUsImagingParameters.h"
-#include "vtksys/SystemTools.hxx"
+
+// Ulterius includes
+#include <ImagingModes.h> // Ulterius imaging modes
+#include <ulterius_def.h>
+
+// VTK includes
+#include <vtkImageData.h>
+#include <vtkInformation.h>
+#include <vtkInformationVector.h>
+#include <vtkMultiThreader.h>
+#include <vtkObjectFactory.h>
+#include <vtkStreamingDemandDrivenPipeline.h>
+#include <vtkTimerLog.h>
+#include <vtkUnsignedCharArray.h>
+#include <vtkPlusUsImagingParameters.h>
+#include <vtksys/SystemTools.hxx>
+
+// OS includes
 #include <ctype.h>
+
+// STL includes
 #include <string>
 #include <vector>
 
@@ -78,6 +86,7 @@ vtkPlusSonixVideoSource::vtkPlusSonixVideoSource()
   , UlteriusConnected(false)
   , AutoClipEnabled(false)
   , ImageGeometryOutputEnabled(false)
+  , ImagingParameterChanged(false)
 {
   this->SetSonixIP("127.0.0.1");
   this->StartThreadForInternalUpdates = false;
@@ -152,6 +161,9 @@ bool vtkPlusSonixVideoSource::vtkPlusSonixVideoSourceParamCallback(void* paramId
     return false;
   }
 
+  vtkPlusSonixVideoSource::ActiveSonixDevice->ImagingParameterChanged = true;
+  vtkPlusSonixVideoSource::ActiveSonixDevice->ChangedImagingParameters[paramName] = true;
+
   if (STRCASECMP(paramName, "b-depth") == 0)
   {
     // we cannot query parameter values here, so just set a flag
@@ -177,6 +189,63 @@ bool vtkPlusSonixVideoSource::vtkPlusSonixVideoSourceParamCallback(void* paramId
   return false;
 }
 
+//----------------------------------------------------------------------------
+// Update imaging parameters from device
+void vtkPlusSonixVideoSource::UpdateImagingParametersFromDevice()
+{
+  this->ImagingParameterChanged = false;
+  for (std::map<std::string, bool>::iterator changedParameterIt = this->ChangedImagingParameters.begin(); changedParameterIt != this->ChangedImagingParameters.end(); ++changedParameterIt)
+  {
+    bool parameterChanged = changedParameterIt->second;
+    if (!parameterChanged)
+    {
+      continue;
+    }
+    changedParameterIt->second = false;
+
+    std::string parameterName = changedParameterIt->first;
+    if (parameterName == "b-freq")
+    {
+      double unused = 0;
+      this->GetFrequencyDevice(unused);
+    }
+    else if (parameterName == "b-depth")
+    {
+      int unused = 0;
+      this->GetDepthDevice(unused);
+    }
+    else if (parameterName == "b-gain")
+    {
+      int unused = 0;
+      this->GetGainDevice(unused);
+    }
+    else if (parameterName == "b-dyn log factor")
+    {
+      int unused = 0;
+      this->GetDynRangeDevice(unused);
+    }
+    else if (parameterName == "b-initial zoom")
+    {
+      int unused = 0;
+      this->GetZoomDevice(unused);
+    }
+    else if (parameterName == "sector")
+    {
+      int unused = 0;
+      this->GetSectorDevice(unused);
+    }
+    else if (parameterName == "b-tgc")
+    {
+      Plus_uTGC unused;
+      this->GetTimeGainCompensationDevice(unused);
+    }
+    else if (parameterName == "soundvelocity")
+    {
+      float unused = 0;
+      this->GetSoundVelocityDevice(unused);
+    }
+  }
+}
 
 //----------------------------------------------------------------------------
 // copy the Device Independent Bitmap from the VFW framebuffer into the
@@ -290,6 +359,11 @@ PlusStatus vtkPlusSonixVideoSource::AddFrameToBuffer(void* dataPtr, int type, in
     this->CurrentTransducerOriginPixels[0] = currentTransducerOriginPixels.x - clipRectangleOrigin[0];
     this->CurrentTransducerOriginPixels[1] = currentTransducerOriginPixels.y - clipRectangleOrigin[1];
     this->CurrentTransducerOriginPixels[2] = 0;
+  }
+
+  if (this->ImagingParameterChanged)
+  {
+    this->UpdateImagingParametersFromDevice();
   }
 
   PlusTrackedFrame::FieldMapType customFields;
@@ -523,6 +597,15 @@ PlusStatus vtkPlusSonixVideoSource::InternalConnect()
 
     initializationCompleted = true;
     this->ImageGeometryChanged = true; // trigger an initial update of geometry info
+    this->ImagingParameterChanged = true; // trigger an initial update of the following parameters
+    this->ChangedImagingParameters["b-freq"] = true;
+    this->ChangedImagingParameters["b-depth"] = true;
+    this->ChangedImagingParameters["b-gain"] = true;
+    this->ChangedImagingParameters["b-dyn log factor"] = true;
+    this->ChangedImagingParameters["b-initial zoom"] = true;
+    this->ChangedImagingParameters["sector"] = true;
+    this->ChangedImagingParameters["b-tgc"] = true;
+    this->ChangedImagingParameters["soundvelocity"] = true;
   } // while (!initializationCompleted)
 
   LOG_DEBUG("Successfully connected to sonix video device");
@@ -623,7 +706,7 @@ PlusStatus vtkPlusSonixVideoSource::ReadConfiguration(vtkXMLDataElement* rootCon
   XML_READ_SCALAR_ATTRIBUTE_OPTIONAL(int, Timeout, deviceConfig);
   XML_READ_SCALAR_ATTRIBUTE_OPTIONAL(double, ConnectionSetupDelayMs, deviceConfig);
 
-  if (this->RequestImagingParameterChange() == PLUS_FAIL)
+  if (this->InternalApplyImagingParameterChange() == PLUS_FAIL)
   {
     LOG_ERROR("Failed to change imaging parameters in the device");
     return PLUS_FAIL;
@@ -756,12 +839,12 @@ PlusStatus vtkPlusSonixVideoSource::GetParamValueDevice(char* paramId, Plus_uTGC
 }
 
 //----------------------------------------------------------------------------
-PlusStatus vtkPlusSonixVideoSource::SetFrequencyDevice(int aFrequencyMHz)
+PlusStatus vtkPlusSonixVideoSource::SetFrequencyDevice(double aFrequencyMHz)
 {
   // Convert frequency between MHz and Hz
   int frequencyHz = aFrequencyMHz * 1000000;
   PlusStatus result = this->SetParamValueDevice("b-freq", frequencyHz, frequencyHz);
-  aFrequencyMHz = frequencyHz / 1000000;
+  aFrequencyMHz = frequencyHz / 1000000.0;
   if (result == PLUS_SUCCESS)
   {
     this->ImagingParameters->SetFrequencyMhz(aFrequencyMHz);
@@ -771,12 +854,12 @@ PlusStatus vtkPlusSonixVideoSource::SetFrequencyDevice(int aFrequencyMHz)
 }
 
 //----------------------------------------------------------------------------
-PlusStatus vtkPlusSonixVideoSource::GetFrequencyDevice(int& aFrequencyMHz)
+PlusStatus vtkPlusSonixVideoSource::GetFrequencyDevice(double& aFrequencyMHz)
 {
   // Convert frequency between MHz and Hz
   int frequencyHz = aFrequencyMHz * 1000000;
   PlusStatus result = this->GetParamValueDevice("b-freq", frequencyHz, frequencyHz);
-  aFrequencyMHz = frequencyHz / 1000000;
+  aFrequencyMHz = frequencyHz / 1000000.0;
   if (result == PLUS_SUCCESS)
   {
     this->ImagingParameters->SetFrequencyMhz(aFrequencyMHz);
@@ -816,7 +899,7 @@ PlusStatus vtkPlusSonixVideoSource::SetGainDevice(int aGainPercent)
   // Need to convert between the different units
   int gainUltrasonixUnits = 6000 * (aGainPercent / 100.0) - 3000;
   PlusStatus result = SetParamValueDevice("b-gain", gainUltrasonixUnits, gainUltrasonixUnits);
-  aGainPercent = ((gainUltrasonixUnits + 3000) / 6000) * 100;
+  aGainPercent = ((gainUltrasonixUnits + 3000.0) / 6000.0) * 100.0;
   if (result == PLUS_SUCCESS)
   {
     this->ImagingParameters->SetGainPercent(aGainPercent);
@@ -832,7 +915,7 @@ PlusStatus vtkPlusSonixVideoSource::GetGainDevice(int& aGainPercent)
   // Need to convert between the different units
   int gainUltrasonixUnits = 6000 * (aGainPercent / 100.0) - 3000;
   PlusStatus result = this->GetParamValueDevice("b-gain", gainUltrasonixUnits, gainUltrasonixUnits);
-  aGainPercent = ((gainUltrasonixUnits + 3000) / 6000) * 100;
+  aGainPercent = ((gainUltrasonixUnits + 3000.0) / 6000.0) * 100.0;
   if (result == PLUS_SUCCESS)
   {
     this->ImagingParameters->SetGainPercent(aGainPercent);
@@ -1475,70 +1558,70 @@ void vtkPlusSonixVideoSource::Plus_uTGC::fromString(const std::string& input, ch
 }
 
 //----------------------------------------------------------------------------
-PlusStatus vtkPlusSonixVideoSource::RequestImagingParameterChange()
+PlusStatus vtkPlusSonixVideoSource::InternalApplyImagingParameterChange()
 {
   PlusStatus status = PLUS_SUCCESS;
 
-  if ( this->ImagingParameters->IsSet(vtkPlusUsImagingParameters::KEY_FREQUENCY)
-    && this->ImagingParameters->IsPending(vtkPlusUsImagingParameters::KEY_FREQUENCY) )
+  if (this->ImagingParameters->IsSet(vtkPlusUsImagingParameters::KEY_FREQUENCY)
+      && this->ImagingParameters->IsPending(vtkPlusUsImagingParameters::KEY_FREQUENCY))
   {
     if (this->SetFrequencyDevice(this->ImagingParameters->GetFrequencyMhz()) != PLUS_SUCCESS)
     {
-      LOG_ERROR("Failed to set frequency imaging parameter" );
+      LOG_ERROR("Failed to set frequency imaging parameter");
       status = PLUS_FAIL;
     }
   }
-  if ( this->ImagingParameters->IsSet(vtkPlusUsImagingParameters::KEY_DEPTH)
-    && this->ImagingParameters->IsPending(vtkPlusUsImagingParameters::KEY_DEPTH) )
+  if (this->ImagingParameters->IsSet(vtkPlusUsImagingParameters::KEY_DEPTH)
+      && this->ImagingParameters->IsPending(vtkPlusUsImagingParameters::KEY_DEPTH))
   {
     if (this->SetDepthDevice(this->ImagingParameters->GetDepthMm()) != PLUS_SUCCESS)
     {
-      LOG_ERROR("Failed to set depth imaging parameter" );
+      LOG_ERROR("Failed to set depth imaging parameter");
       status = PLUS_FAIL;
     }
   }
-  if ( this->ImagingParameters->IsSet(vtkPlusUsImagingParameters::KEY_SECTOR)
-    && this->ImagingParameters->IsPending(vtkPlusUsImagingParameters::KEY_SECTOR) )
+  if (this->ImagingParameters->IsSet(vtkPlusUsImagingParameters::KEY_SECTOR)
+      && this->ImagingParameters->IsPending(vtkPlusUsImagingParameters::KEY_SECTOR))
   {
     if (this->SetSectorDevice(this->ImagingParameters->GetSectorPercent()) != PLUS_SUCCESS)
     {
-      LOG_ERROR("Failed to set sector imaging parameter" );
+      LOG_ERROR("Failed to set sector imaging parameter");
       status = PLUS_FAIL;
     }
   }
-  if ( this->ImagingParameters->IsSet(vtkPlusUsImagingParameters::KEY_GAIN)
-    && this->ImagingParameters->IsPending(vtkPlusUsImagingParameters::KEY_GAIN) )
+  if (this->ImagingParameters->IsSet(vtkPlusUsImagingParameters::KEY_GAIN)
+      && this->ImagingParameters->IsPending(vtkPlusUsImagingParameters::KEY_GAIN))
   {
     if (this->SetGainDevice(this->ImagingParameters->GetGainPercent()) != PLUS_SUCCESS)
     {
-      LOG_ERROR("Failed to set gain imaging parameter" );
+      LOG_ERROR("Failed to set gain imaging parameter");
       status = PLUS_FAIL;
     }
   }
-  if ( this->ImagingParameters->IsSet(vtkPlusUsImagingParameters::KEY_DYNRANGE)
-    && this->ImagingParameters->IsPending(vtkPlusUsImagingParameters::KEY_DYNRANGE) )
+  if (this->ImagingParameters->IsSet(vtkPlusUsImagingParameters::KEY_DYNRANGE)
+      && this->ImagingParameters->IsPending(vtkPlusUsImagingParameters::KEY_DYNRANGE))
   {
     if (this->SetDynRangeDevice(this->ImagingParameters->GetDynRangeDb()) != PLUS_SUCCESS)
     {
-      LOG_ERROR("Failed to set dynamic range imaging parameter" );
+      LOG_ERROR("Failed to set dynamic range imaging parameter");
       status = PLUS_FAIL;
     }
   }
-  if ( this->ImagingParameters->IsSet(vtkPlusUsImagingParameters::KEY_ZOOM)
-    && this->ImagingParameters->IsPending(vtkPlusUsImagingParameters::KEY_ZOOM) )
+  if (this->ImagingParameters->IsSet(vtkPlusUsImagingParameters::KEY_ZOOM)
+      && this->ImagingParameters->IsPending(vtkPlusUsImagingParameters::KEY_ZOOM))
   {
     if (this->SetZoomDevice(this->ImagingParameters->GetZoomFactor()) != PLUS_SUCCESS)
     {
-      LOG_ERROR("Failed to set zoom imaging parameter" );
+      LOG_ERROR("Failed to set zoom imaging parameter");
       status = PLUS_FAIL;
     }
   }
-  if ( this->ImagingParameters->IsSet(vtkPlusUsImagingParameters::KEY_SOUNDVELOCITY)
-    && this->ImagingParameters->IsPending(vtkPlusUsImagingParameters::KEY_SOUNDVELOCITY) )
+  if (this->ImagingParameters->IsSet(vtkPlusUsImagingParameters::KEY_SOUNDVELOCITY)
+      && this->ImagingParameters->IsPending(vtkPlusUsImagingParameters::KEY_SOUNDVELOCITY))
   {
     if (this->SetSoundVelocityDevice(this->ImagingParameters->GetSoundVelocity()) != PLUS_SUCCESS)
     {
-      LOG_ERROR("Failed to set sound velocity imaging parameter" );
+      LOG_ERROR("Failed to set sound velocity imaging parameter");
       status = PLUS_FAIL;
     }
   }
