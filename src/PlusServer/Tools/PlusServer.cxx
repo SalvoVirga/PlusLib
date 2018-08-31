@@ -137,7 +137,7 @@ int main(int argc, char** argv)
     }
     igtlServerList.push_back(server);
   }
-  if (igltServerCount == 0) { LOG_WARNING("No vtkPlusOpenIGTLinkServer tags were found in the configuration file."); }
+  if (igltServerCount == 0) { LOG_INFO("No vtkPlusOpenIGTLinkServer tags were found in the configuration file."); }
 
   // SIMPLE Publishers
   LOG_INFO("Server status: Starting SIMPLE publishers.");
@@ -145,6 +145,7 @@ int main(int argc, char** argv)
   int simpleServerCount{0};
   for (int i = 0; i < configRootElement->GetNumberOfNestedElements(); ++i)
   {
+	  LOG_DEBUG("Going over a GetNumberOfNestedElement.");
     vtkXMLDataElement* serverElement = configRootElement->GetNestedElement(i);
     if (STRCASECMP(serverElement->GetName(), "PlusSimplePublisher") != 0)
     {
@@ -156,14 +157,14 @@ int main(int argc, char** argv)
     // This is a PlusSimplePublisher tag, let's create it
     vtkSmartPointer<vtkPlusSimplePublisher> publisher = vtkSmartPointer<vtkPlusSimplePublisher>::New();
     LOG_DEBUG("Initializing Plus SIMPLE publisher... ");
-    if (publisher->Start(dataCollector, transformRepository, serverElement, configFilePath) != PLUS_SUCCESS)
+    if (publisher->Start(dataCollector.GetPointer(), transformRepository.GetPointer(), serverElement, vtkPlusConfig::GetInstance()->GetDeviceSetConfigurationFileName()) != PLUS_SUCCESS)
     {
       LOG_ERROR("Failed to start SIMPLE publisher");
       exit(EXIT_FAILURE);
     }
     simplePublisherList.push_back(publisher);
   }
-  if (simpleServerCount == 0) { LOG_WARNING("No vtkPlusSimplePublisher tags were found in the configuration file."); }
+  if (simpleServerCount == 0) { LOG_INFO("No vtkPlusSimplePublisher tags were found in the configuration file."); }
 
   if (igltServerCount == 0 && simpleServerCount == 0) {
     LOG_ERROR("No vtkPlusOpenIGTLinkServer or vtkPlusSimplePublisher tags were found in the configuration file. Please "
@@ -210,6 +211,8 @@ int main(int argc, char** argv)
     publisher->Stop();
   }
   LOG_INFO("Shutdown successful.");
+
+  simple::ContextManager::destroy();
 
   return EXIT_SUCCESS;
 }

@@ -367,9 +367,9 @@ PlusStatus vtkPlusIgtlMessageFactory::PackMessages(int clientId, const PlusIgtlC
       {
         bool isValid(false);
         vtkSmartPointer<vtkMatrix4x4> matrix(vtkSmartPointer<vtkMatrix4x4>::New());
-        transformRepository->GetTransform(*nameIter, matrix, &isValid);
-        trackedFrame.SetFrameTransform(*nameIter, matrix);
-        trackedFrame.SetFrameTransformStatus(*nameIter, isValid ? FIELD_OK : FIELD_INVALID);
+        transformRepository->GetTransform(nameIter, matrix, &isValid);
+        trackedFrame.SetFrameTransform(nameIter, matrix);
+        trackedFrame.SetFrameTransformStatus(nameIter, isValid ? FIELD_OK : FIELD_INVALID);
       }
 
       vtkSmartPointer<vtkMatrix4x4> imageMatrix = vtkSmartPointer<vtkMatrix4x4>::New();
@@ -408,7 +408,7 @@ PlusStatus vtkPlusIgtlMessageFactory::PackMessages(int clientId, const PlusIgtlC
     {
       for (auto& stringName : clientInfo.StringNames)
       {
-        const char* stringValue = trackedFrame.GetCustomFrameField(stringName.c_str());
+        const char* stringValue = trackedFrame.GetFrameField(stringName.c_str());
         if (stringValue == NULL)
         {
           // no value is available, do not send anything
