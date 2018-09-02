@@ -228,10 +228,14 @@ int main(int argc, char** argv)
   {
     server->Stop();
   }
+
   for (const auto& publisher : simplePublisherList)
   {
     publisher->Stop();
   }
+
+  simple::ContextManager::destroy();
+
   LOG_INFO("Shutdown successful.");
 
   return EXIT_SUCCESS;

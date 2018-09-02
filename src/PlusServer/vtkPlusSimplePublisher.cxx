@@ -164,10 +164,10 @@ PlusStatus vtkPlusSimplePublisher::StartSimpleService() {
   }
 
   if (BroadcastChannel) { BroadcastChannel->GetMostRecentTimestamp(LastSentTrackedFrameTimestamp); }
-
   // If no thread was every spawned yet.
   if (!PublishThread.joinable()) {
     DataSenderActive.first = true;
+	// God only knows why, this thread that is just created here blocks the main thread of PlusServer...
     PublishThread = std::thread(&vtkPlusSimplePublisher::DataSenderThread, this);
   }
 
@@ -177,7 +177,7 @@ PlusStatus vtkPlusSimplePublisher::StartSimpleService() {
 }
 
 //----------------------------------------------------------------------------
-void* vtkPlusSimplePublisher::DataSenderThread() {
+void vtkPlusSimplePublisher::DataSenderThread() {
   DataSenderActive.second = true;
 
   double elapsedTimeSinceLastPacketSentSec{0};
@@ -188,7 +188,6 @@ void* vtkPlusSimplePublisher::DataSenderThread() {
   // Close thread
   DataSenderThreadId = -1;
   DataSenderActive.second = false;
-  return nullptr;
 }
 
 //----------------------------------------------------------------------------
@@ -370,12 +369,8 @@ PlusStatus vtkPlusSimplePublisher::Stop() {
   // Stop connection receiver thread
   if (DataSenderThreadId >= 0) {
     DataSenderActive.first = false;
-    while (DataSenderActive.second) {
-      // Wait until the thread stops
-      vtkPlusAccurateTimer::DelayWithEventProcessing(0.2);
-    }
+    if (PublishThread.joinable()) { PublishThread.join(); }
     DataSenderThreadId = -1;
-    LOG_DEBUG("ConnectionReceiverThread stopped");
   }
 
   LOG_INFO("Simple Publisher stopped.");

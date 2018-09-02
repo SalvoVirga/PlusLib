@@ -93,7 +93,7 @@ private:
   std::thread PublishThread{};
 
   /*! Thread for sending data to clients */
-  void* DataSenderThread();
+  void DataSenderThread();
 
   /*! Attempt to send any unsent frames to clients, if unsuccessful, accumulate an elapsed time */
   PlusStatus SendLatestFrames(double elapsedTimeSinceLastPacketSentSec);
