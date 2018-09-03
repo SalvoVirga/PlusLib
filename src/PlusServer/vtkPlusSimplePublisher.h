@@ -1,7 +1,9 @@
 #ifndef __VTKPLUSSIMPLEPUBLISHER_H
 #define __VTKPLUSSIMPLEPUBLISHER_H
 
+// System includes
 #include <thread>
+#include <atomic>
 
 // Local includes
 #include "vtkPlusDataCollector.h"
@@ -9,29 +11,33 @@
 #include "vtkPlusTransformRepository.h"
 
 // VTK includes
-#include <vtkMultiThreader.h>
 #include <vtkObject.h>
-#include <vtkSmartPointer.h>
 
 // SIMPLE includes
 #include "simple/publisher.hpp"
 #include "simple_msgs/image.hpp"
 
-class vtkPlusServerExport vtkPlusSimplePublisher : public vtkObject {
+class vtkPlusServerExport vtkPlusSimplePublisher {
 public:
   struct ImageStream {
     ImageStream() = default;
-    ImageStream(std::string n_1, std::string n_2) : Name(n_1), EmbeddedTransformToFrame(n_2) {}
+	ImageStream(const std::string& n_1, const std::string& n_2) : Name{ n_1 }, EmbeddedTransformToFrame{ n_2 } {}
 
     /*! Name of the image stream and the image message embedded transform "From" frame */
     std::string Name{""};
     /*! Name of the image message embedded transform "To" frame */
     std::string EmbeddedTransformToFrame{""};
-
     int SequenceNumber{0};
   };
 
-  static vtkPlusSimplePublisher* New();
+  vtkPlusSimplePublisher() = default;
+
+  virtual ~vtkPlusSimplePublisher() {
+	  if (PublishThread.joinable()) { PublishThread.join(); }
+  };
+
+  //vtkPlusSimplePublisher(const vtkPlusSimplePublisher&) {};
+
   /*! Configures and starts the server from the provided PlusSimplePublisher XML element */
   PlusStatus Start(vtkPlusDataCollector* dataCollector, vtkPlusTransformRepository* transformRepository,
                    vtkXMLDataElement* serverElement, const std::string& configFilePath);
@@ -42,55 +48,11 @@ public:
   /*! Read the configuration file in XML format and set up the devices */
   virtual PlusStatus ReadConfiguration(vtkXMLDataElement* serverElement, const std::string& aFilename);
 
-  /*! Start publisher*/
-  PlusStatus StartSimpleService();
 
-  /*! Set server listening port */
-  vtkSetMacro(ListeningPort, int);
-  /*! Get server listening port */
-  vtkGetMacroConst(ListeningPort, int);
-
-  /*! Set data collector instance */
-  vtkSetMacro(DataCollector, vtkPlusDataCollector*);
-  vtkGetMacroConst(DataCollector, vtkPlusDataCollector*);
-
-  /*! Set transform repository instance */
-  vtkSetMacro(TransformRepository, vtkPlusTransformRepository*);
-  vtkGetMacroConst(TransformRepository, vtkPlusTransformRepository*);
-
-  /*! Set the required OutputChannelId */
-  vtkSetStdStringMacro(OutputChannelId);
-  /*! Get the required OutputChannelId */
-  vtkGetStdStringMacro(OutputChannelId);
-
-  vtkSetStdStringMacro(ConfigFilename);
-  vtkGetStdStringMacro(ConfigFilename);
-
-  /*!
-    Execute all commands in the queue from the current thread (useful if commands should be executed from the main
-    thread) \return Number of executed commands
-  */
-  int ProcessPendingCommands();
-
-protected:
-  vtkPlusSimplePublisher() = default;
-  virtual ~vtkPlusSimplePublisher() {
-    if (PublishThread.joinable()) { PublishThread.join(); }
-  };
 
 private:
-  /*! Simple publisher instance */
-  simple::Publisher<simple_msgs::Image<uint8_t>> ImagePublisher;
-  simple::Publisher<simple_msgs::Pose> TransformPublisher;  // TODO
-
-  /*! Transform repository instance */
-  vtkSmartPointer<vtkPlusTransformRepository> TransformRepository{nullptr};
-
-  /*! Data collector instance */
-  vtkSmartPointer<vtkPlusDataCollector> DataCollector{nullptr};
-
-  /*! Publish Thread */
-  std::thread PublishThread{};
+  /*! Start publisher*/
+  PlusStatus StartSimpleService();
 
   /*! Thread for sending data to clients */
   void DataSenderThread();
@@ -103,14 +65,25 @@ private:
 
   simple_msgs::Pose vtkMatrixToSimplePose(vtkMatrix4x4* matrix);
 
+
+  /*** Member variables ***/
+  /*! Publish Thread */
+  std::thread PublishThread{};
+
+  /*! Transform repository instance */
+  vtkPlusTransformRepository* TransformRepository{ nullptr };
+
+  /*! Data collector instance */
+  vtkPlusDataCollector* DataCollector{ nullptr };
+
+  /*! Channel to use for broadcasting */
+  vtkPlusChannel* BroadcastChannel{ nullptr };
+
   /*! Server listening port */
   int ListeningPort{1};
 
   // Active flag for threads (first: request, second: respond )
-  std::pair<bool, bool> DataSenderActive{};
-
-  // Thread IDs
-  int DataSenderThreadId{-1};
+  std::atomic<bool> DataSenderActive{false};
 
   /*! Last sent tracked frame timestamp */
   double LastSentTrackedFrameTimestamp{0.0};
@@ -124,16 +97,43 @@ private:
   /*! Channel ID to request the data from */
   std::string OutputChannelId{""};
 
-  /*! Channel to use for broadcasting */
-  vtkPlusChannel* BroadcastChannel{nullptr};
-
   std::string ConfigFilename{""};
-
   std::string PublisherMessageType{""};
   std::vector<std::string> TransformNames{};
   std::vector<ImageStream> ImagesNames{};
 
-  double BroadcastStartTime{0.0};
+  /*! Simple publisher instance */
+  simple::Publisher<simple_msgs::Image<uint8_t>> ImagePublisher;
+  simple::Publisher<simple_msgs::Pose> TransformPublisher;
+
+  // Custom function to read an int from the xml tree - PLUS uses some damn old macros....
+  PlusStatus xml_read_scalar_attribute_required(std::string xml_attribute, vtkXMLDataElement* xml_elem, int& variable)
+  { 
+    int tmpValue = 0; 
+    if (xml_elem->GetScalarAttribute(xml_attribute.c_str(), tmpValue) )
+    { 
+		variable = tmpValue;
+		return PLUS_SUCCESS;
+    } 
+    else  
+    { 
+      LOG_ERROR("Unable to find required " << xml_attribute << " attribute in " << (xml_elem->GetName() ? xml_elem->GetName() : "(undefined)") << " element in device set configuration");
+      return PLUS_FAIL; 
+    } 
+  }
+
+  // Custom function to read a string from the xml tree - PLUS uses some damn old macros....
+  PlusStatus xml_read_string_attribute_required(std::string xml_attribute, vtkXMLDataElement* xml_elem, std::string& variable)
+  {
+	const char* destinationXmlElementVar = xml_elem->GetAttribute(xml_attribute.c_str());
+	if (destinationXmlElementVar == nullptr)  
+	{ 
+	  LOG_ERROR("Unable to find required " << xml_attribute << " attribute in " << (xml_elem->GetName() ? xml_elem->GetName() : "(undefined)") << " element in device set configuration");
+	  return PLUS_FAIL; 
+     } 
+	variable = std::string(destinationXmlElementVar);		
+	return PLUS_SUCCESS;
+  }
 };
 
 #endif  // vtkPlusSimplePublisher_H

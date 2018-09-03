@@ -164,7 +164,7 @@ int main(int argc, char** argv)
 
   // SIMPLE Publishers
   LOG_INFO("Server status: Starting SIMPLE publishers.");
-  std::vector<vtkPlusSimplePublisher*> simplePublisherList;
+  std::vector<std::shared_ptr<vtkPlusSimplePublisher>> simplePublisherList;
   int simpleServerCount{0};
   for (int i = 0; i < configRootElement->GetNumberOfNestedElements(); ++i)
   {
@@ -177,7 +177,7 @@ int main(int argc, char** argv)
     ++simpleServerCount;
 
     // This is a PlusSimplePublisher tag, let's create it
-    vtkSmartPointer<vtkPlusSimplePublisher> publisher = vtkSmartPointer<vtkPlusSimplePublisher>::New();
+	std::shared_ptr<vtkPlusSimplePublisher> publisher{std::make_shared<vtkPlusSimplePublisher>()};
     LOG_DEBUG("Initializing Plus SIMPLE publisher... ");
     if (publisher->Start(dataCollector, transformRepository, serverElement, configFilePath) != PLUS_SUCCESS)
     {
@@ -229,7 +229,7 @@ int main(int argc, char** argv)
     server->Stop();
   }
 
-  for (const auto& publisher : simplePublisherList)
+  for (auto& publisher : simplePublisherList)
   {
     publisher->Stop();
   }

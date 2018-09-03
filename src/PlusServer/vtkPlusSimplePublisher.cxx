@@ -4,8 +4,6 @@
 #include <vtkQuaternion.h>
 #include "vtkPlusTrackedFrameList.h"
 
-vtkStandardNewMacro(vtkPlusSimplePublisher);
-
 //------------------------------------------------------------------------------
 PlusStatus vtkPlusSimplePublisher::Start(vtkPlusDataCollector* dataCollector,
                                          vtkPlusTransformRepository* transformRepository,
@@ -15,13 +13,14 @@ PlusStatus vtkPlusSimplePublisher::Start(vtkPlusDataCollector* dataCollector,
     return PLUS_FAIL;
   }
 
-  SetDataCollector(dataCollector);
+  DataCollector = dataCollector;
+
   if (ReadConfiguration(serverElement, configFilePath.c_str()) != PLUS_SUCCESS) {
     LOG_ERROR("Failed to read PlusSimplePublisher configuration");
     return PLUS_FAIL;
   }
 
-  SetTransformRepository(transformRepository);
+  TransformRepository = transformRepository;
 
   if (StartSimpleService() != PLUS_SUCCESS) {
     LOG_ERROR("Failed to start Plus Simple publisher");
@@ -32,30 +31,30 @@ PlusStatus vtkPlusSimplePublisher::Start(vtkPlusDataCollector* dataCollector,
 }
 
 //------------------------------------------------------------------------------
-PlusStatus vtkPlusSimplePublisher::ReadConfiguration(vtkXMLDataElement* serverElement, const std::string& aFilename) {
+PlusStatus vtkPlusSimplePublisher::ReadConfiguration(vtkXMLDataElement* serverElement, const std::string& filename) {
   LOG_TRACE("vtkPlusSimplePublisher::ReadConfiguration");
 
-  if (aFilename.empty()) {
+  if (filename.empty()) {
     LOG_ERROR("Unable to configure PlusServer without an acceptable config file submitted.");
     return PLUS_FAIL;
   }
-  SetConfigFilename(aFilename);
 
-  XML_READ_SCALAR_ATTRIBUTE_REQUIRED(int, ListeningPort, serverElement);
-  XML_READ_STRING_ATTRIBUTE_REQUIRED(OutputChannelId, serverElement);
+  ConfigFilename = filename;
+  xml_read_scalar_attribute_required("ListeningPort", serverElement, ListeningPort);
+  xml_read_string_attribute_required("OutputChannelId", serverElement, OutputChannelId);
 
   vtkXMLDataElement* defaultClientInfo = serverElement->FindNestedElementWithName("PublisherInfo");
   if (defaultClientInfo != nullptr) {
     // Get the message type to publish
     vtkXMLDataElement* messageTypes = defaultClientInfo->FindNestedElementWithName("MessageType");
-    if (messageTypes != NULL) {
+    if (messageTypes != nullptr) {
       if (messageTypes->GetNumberOfNestedElements() > 1) {
         LOG_WARNING("A SIMPLE Publisher can only publish one message type. Only the first one will be used.");
       }
-      auto messageName = messageTypes->GetNestedElement(0)->GetName();
-      if (messageName != nullptr && STRCASECMP(messageName, "Message") == 0) {
+      std::string messageName = messageTypes->GetNestedElement(0)->GetName();
+      if (!messageName.empty() && (messageName == "Message")) {
         vtkXMLDataElement* typeElem = messageTypes->GetNestedElement(0);
-        XML_READ_STRING_ATTRIBUTE_NONMEMBER_REQUIRED(Type, PublisherMessageType, typeElem);
+		xml_read_string_attribute_required("Type", typeElem, PublisherMessageType);
       }
     }
 
@@ -63,11 +62,11 @@ PlusStatus vtkPlusSimplePublisher::ReadConfiguration(vtkXMLDataElement* serverEl
       vtkXMLDataElement* transformNames = defaultClientInfo->FindNestedElementWithName("TransformNames");
       if (transformNames != nullptr) {
         for (int i = 0; i < transformNames->GetNumberOfNestedElements(); ++i) {
-          const char* transform = transformNames->GetNestedElement(i)->GetName();
-          if (transform != nullptr || STRCASECMP(transform, "Transform") == 0) {
+          std::string transform = transformNames->GetNestedElement(i)->GetName();
+          if (!transform.empty() || (transform == "Transform")) {
             vtkXMLDataElement* transformElem = transformNames->GetNestedElement(i);
             std::string name{""};
-            XML_READ_STRING_ATTRIBUTE_NONMEMBER_OPTIONAL(Name, name, transformElem);
+			xml_read_string_attribute_required("Name", transformElem, name);
             if (name.empty()) {
               LOG_WARNING("In TransformNames child transform #"
                           << i << " definition is incomplete: required Name attribute is missing.");
@@ -88,11 +87,11 @@ PlusStatus vtkPlusSimplePublisher::ReadConfiguration(vtkXMLDataElement* serverEl
       vtkXMLDataElement* imageNames = defaultClientInfo->FindNestedElementWithName("ImageNames");
       if (imageNames != nullptr) {
         for (int i = 0; i < imageNames->GetNumberOfNestedElements(); ++i) {
-          const char* image = imageNames->GetNestedElement(i)->GetName();
-          if (image == nullptr || STRCASECMP(image, "Image") != 0) { continue; }
+          std::string image = imageNames->GetNestedElement(i)->GetName();
+          if (image.empty() || (image != "Image")) { continue; }
           vtkXMLDataElement* imageElem = imageNames->GetNestedElement(i);
           std::string embeddedTransformToFrame{""};
-          XML_READ_STRING_ATTRIBUTE_NONMEMBER_OPTIONAL(EmbeddedTransformToFrame, embeddedTransformToFrame, imageElem);
+		  xml_read_string_attribute_required("EmbeddedTransformToFrame", imageElem, embeddedTransformToFrame);
           if (embeddedTransformToFrame.empty()) {
             LOG_WARNING("EmbeddedTransformToFrame attribute of ImageNames/Image element #"
                         << i << " is missing. This element will be ignored.");
@@ -100,6 +99,8 @@ PlusStatus vtkPlusSimplePublisher::ReadConfiguration(vtkXMLDataElement* serverEl
           }
 
           std::string imageName;
+
+		  xml_read_string_attribute_required("Name", imageElem, imageName);
           XML_READ_STRING_ATTRIBUTE_NONMEMBER_OPTIONAL(Name, imageName, imageElem);
           if (imageName.empty()) {
             LOG_WARNING("Name attribute of ImageNames/Image element # "
@@ -127,8 +128,6 @@ PlusStatus vtkPlusSimplePublisher::StartSimpleService() {
   }
 
   // Before we spawn the thread, let's find the right channel to take our images from.
-  DataSenderActive.second = true;
-
   DeviceCollection aCollection;
   if (DataCollector->GetDevices(aCollection) != PLUS_SUCCESS || aCollection.size() == 0) {
     LOG_ERROR("Unable to retrieve devices. Check configuration and connection.");
@@ -137,15 +136,15 @@ PlusStatus vtkPlusSimplePublisher::StartSimpleService() {
 
   // Find the requested channel ID in all the devices
   for (const auto& device : aCollection) {
-    if (device->GetOutputChannelByName(BroadcastChannel, GetOutputChannelId()) == PLUS_SUCCESS) { break; }
+    if (device->GetOutputChannelByName(BroadcastChannel, OutputChannelId) == PLUS_SUCCESS) { break; }
   }
 
   if (BroadcastChannel == nullptr) {
     // The requested channel ID is not found
-    if (!GetOutputChannelId().empty()) {
+    if (!OutputChannelId.empty()) {
       // the user explicitly requested a specific channel, but none was found by that name
       // this is an error
-      LOG_ERROR("Unable to start data sending. OutputChannelId not found: " << GetOutputChannelId());
+      LOG_ERROR("Unable to start data sending. OutputChannelId not found: " << OutputChannelId);
       return PLUS_FAIL;
     }
     // The user did not specify any channel, so just use the first channel that can be found in any device.
@@ -166,28 +165,21 @@ PlusStatus vtkPlusSimplePublisher::StartSimpleService() {
   if (BroadcastChannel) { BroadcastChannel->GetMostRecentTimestamp(LastSentTrackedFrameTimestamp); }
   // If no thread was every spawned yet.
   if (!PublishThread.joinable()) {
-    DataSenderActive.first = true;
+    DataSenderActive = true;
 	// God only knows why, this thread that is just created here blocks the main thread of PlusServer...
     PublishThread = std::thread(&vtkPlusSimplePublisher::DataSenderThread, this);
   }
-
-  BroadcastStartTime = vtkPlusAccurateTimer::GetSystemTime();
 
   return PLUS_SUCCESS;
 }
 
 //----------------------------------------------------------------------------
 void vtkPlusSimplePublisher::DataSenderThread() {
-  DataSenderActive.second = true;
-
   double elapsedTimeSinceLastPacketSentSec{0};
-  while (DataSenderActive.first) {
+  while (DataSenderActive) {
     // Send image/tracking/string data
     SendLatestFrames(elapsedTimeSinceLastPacketSentSec);
   }
-  // Close thread
-  DataSenderThreadId = -1;
-  DataSenderActive.second = false;
 }
 
 //----------------------------------------------------------------------------
@@ -367,13 +359,8 @@ simple_msgs::Pose vtkPlusSimplePublisher::vtkMatrixToSimplePose(vtkMatrix4x4* ma
 //----------------------------------------------------------------------------
 PlusStatus vtkPlusSimplePublisher::Stop() {
   // Stop connection receiver thread
-  if (DataSenderThreadId >= 0) {
-    DataSenderActive.first = false;
-    if (PublishThread.joinable()) { PublishThread.join(); }
-    DataSenderThreadId = -1;
-  }
-
+  DataSenderActive = false;
+  if (PublishThread.joinable()) { PublishThread.join(); }
   LOG_INFO("Simple Publisher stopped.");
-
   return PLUS_SUCCESS;
 }
