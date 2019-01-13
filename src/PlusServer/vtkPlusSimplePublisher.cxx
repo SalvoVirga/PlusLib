@@ -274,10 +274,10 @@ PlusStatus vtkPlusSimplePublisher::SendTrackedFrame(PlusTrackedFrame* trackedFra
       }
 
       std::string deviceName{imageTransformName.From() + std::string("_") + imageTransformName.To()};
-      if (trackedFrame->IsCustomFrameFieldDefined(PlusTrackedFrame::FIELD_FRIENDLY_DEVICE_NAME)) {
+      if (trackedFrame->IsFrameFieldDefined(PlusTrackedFrame::FIELD_FRIENDLY_DEVICE_NAME)) {
         // Allow overriding of device name with something human readable
         // The transform name is passed in the metadata
-        deviceName = trackedFrame->GetCustomFrameField(PlusTrackedFrame::FIELD_FRIENDLY_DEVICE_NAME);
+        deviceName = trackedFrame->GetFrameField(PlusTrackedFrame::FIELD_FRIENDLY_DEVICE_NAME);
       }
 
       if (!trackedFrame->GetImageData()->IsImageValid()) {

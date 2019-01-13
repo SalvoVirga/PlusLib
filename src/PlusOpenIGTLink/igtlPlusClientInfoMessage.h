@@ -29,7 +29,7 @@ namespace igtl
     typedef SmartPointer<Self>             Pointer;
     typedef SmartPointer<const Self>       ConstPointer;
 
-    igtlTypeMacro(igtl::PlusClientInfoMessage, igtl::StringMessage);
+    //igtlTypeMacro(igtl::PlusClientInfoMessage, igtl::StringMessage);
     igtlNewMacro(igtl::PlusClientInfoMessage);
 
   public:

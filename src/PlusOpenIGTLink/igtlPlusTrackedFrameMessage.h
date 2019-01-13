@@ -38,7 +38,7 @@ namespace igtl
     typedef SmartPointer<Self>              Pointer;
     typedef SmartPointer<const Self>        ConstPointer;
 
-    igtlTypeMacro(igtl::PlusTrackedFrameMessage, igtl::MessageBase);
+    //igtlTypeMacro(igtl::PlusTrackedFrameMessage, igtl::MessageBase);
     igtlNewMacro(igtl::PlusTrackedFrameMessage);
 
   public:
